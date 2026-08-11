@@ -1,19 +1,11 @@
 {
-  "name": "uidiff",
+  "name": "design-diff",
   "version": "0.0.1",
   "description": "Diffing...",
   "module": "index.ts",
   "type": "module",
   "license": "MIT",
   "author": "@planetabhi",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/planetabhi/uidiff.git"
-  },
-  "homepage": "https://github.com/planetabhi/uidiff#readme",
-  "bugs": {
-    "url": "https://github.com/planetabhi/uidiff/issues"
-  },
   "files": [
     "index.ts"
   ],
