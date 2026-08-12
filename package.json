@@ -1,18 +1,39 @@
 {
   "name": "design-diff",
-  "version": "0.0.1",
-  "description": "Diffing...",
+  "version": "0.2.0",
+  "description": "CLI to overlay a design export (or a Figma frame) on a live page: a before/after slider and pixel-diff heatmap.",
   "module": "index.ts",
   "type": "module",
   "license": "MIT",
   "author": "@planetabhi",
+  "bin": {
+    "design-diff": "index.ts"
+  },
   "files": [
-    "index.ts"
+    "index.ts",
+    "src"
   ],
+  "scripts": {
+    "start": "bun run index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pixelmatch": "^7.2.0",
+    "playwright-core": "^1.62.1",
+    "pngjs": "^7.0.0"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/pngjs": "^6.0.5"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
