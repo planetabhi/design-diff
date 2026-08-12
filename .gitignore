@@ -151,8 +151,5 @@ vite.config.ts.timestamp-*
 ehthumbs.db
 Thumbs.db
 
-plans
-skills
-
 # design-diff run artifacts
 .design-diff/
