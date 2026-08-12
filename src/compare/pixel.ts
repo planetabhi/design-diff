@@ -1,87 +1,35 @@
-// compare_pixel_diff (plan §3c) — advisory pixelmatch over two PNGs. Never pass/fail.
-
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
-import type { IgnoreRegion } from "../types.ts";
 import { reconcileDeviceDims } from "../normalize/scale.ts";
 
 export interface PixelDiffOptions {
-  figmaPngPath: string;
-  domPngPath: string;
+  designPngPath: string;
+  pagePngPath: string;
   heatmapPath: string;
   scale: number;
-  clip: { w: number; h: number };
-  aaThreshold: number; // 0–1
-  ignoreRegions: IgnoreRegion[]; // anchor-relative CSS px
+  threshold: number;
 }
 
-export interface PixelDiffResult {
-  diffPercent: number;
-  heatmapPngRef: string;
-  inputs: {
-    scale: number;
-    clip: { w: number; h: number };
-    aaThreshold: number;
-    ignoreRegions: IgnoreRegion[];
-  };
-}
+export function comparePixelDiff(opts: PixelDiffOptions): { diffPercent: number } {
+  const design = PNG.sync.read(readFileSync(opts.designPngPath));
+  const page = PNG.sync.read(readFileSync(opts.pagePngPath));
 
-/** Mask ignore regions (scaled to device px) by zeroing both images' pixels. */
-function maskRegions(
-  a: Buffer,
-  b: Buffer,
-  width: number,
-  height: number,
-  scale: number,
-  regions: IgnoreRegion[]
-): void {
-  for (const { geometry } of regions) {
-    const x0 = Math.max(0, Math.floor(geometry.x * scale));
-    const y0 = Math.max(0, Math.floor(geometry.y * scale));
-    const x1 = Math.min(width, Math.ceil((geometry.x + geometry.w) * scale));
-    const y1 = Math.min(height, Math.ceil((geometry.y + geometry.h) * scale));
-    for (let y = y0; y < y1; y++) {
-      for (let x = x0; x < x1; x++) {
-        const i = (y * width + x) * 4;
-        a[i] = a[i + 1] = a[i + 2] = a[i + 3] = 0;
-        b[i] = b[i + 1] = b[i + 2] = b[i + 3] = 0;
-      }
-    }
-  }
-}
-
-export function comparePixelDiff(opts: PixelDiffOptions): PixelDiffResult {
-  const figma = PNG.sync.read(readFileSync(opts.figmaPngPath));
-  const dom = PNG.sync.read(readFileSync(opts.domPngPath));
-
-  // Crop both to the shared min box (≤1px rounding); >1px is a hard error (2b).
-  const { width, height } = reconcileDeviceDims(figma, dom, opts.scale);
-  const a = cropRGBA(figma, width, height);
-  const b = cropRGBA(dom, width, height);
-
-  maskRegions(a, b, width, height, opts.scale, opts.ignoreRegions);
+  const { width, height } = reconcileDeviceDims(design, page, opts.scale);
+  const a = cropRGBA(design, width, height);
+  const b = cropRGBA(page, width, height);
 
   const diff = new PNG({ width, height });
   const mismatched = pixelmatch(a, b, diff.data, width, height, {
-    threshold: opts.aaThreshold,
+    threshold: opts.threshold,
     includeAA: false,
   });
 
   mkdirSync(dirname(opts.heatmapPath), { recursive: true });
   writeFileSync(opts.heatmapPath, PNG.sync.write(diff));
 
-  return {
-    diffPercent: (mismatched / (width * height)) * 100,
-    heatmapPngRef: opts.heatmapPath,
-    inputs: {
-      scale: opts.scale,
-      clip: opts.clip,
-      aaThreshold: opts.aaThreshold,
-      ignoreRegions: opts.ignoreRegions,
-    },
-  };
+  return { diffPercent: (mismatched / (width * height)) * 100 };
 }
 
 function cropRGBA(png: PNG, width: number, height: number): Buffer {

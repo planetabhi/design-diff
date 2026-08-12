@@ -37,7 +37,7 @@ const red: [number, number, number, number] = [255, 0, 0, 255];
 
 const base = solid(W, H, white);
 const candidate = solid(W, H, white);
-paintBlock(candidate, 0, 0, 4, 4, red); // 4×4 device-px difference
+paintBlock(candidate, 0, 0, 4, 4, red);
 
 const basePath = join(dir, "base.png");
 const candPath = join(dir, "cand.png");
@@ -47,32 +47,14 @@ writeFileSync(candPath, PNG.sync.write(candidate));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("comparePixelDiff", () => {
-  test("reports a diff and writes a heatmap", () => {
+  test("reports the difference percentage and writes a heatmap", () => {
     const res = comparePixelDiff({
-      figmaPngPath: basePath,
-      domPngPath: candPath,
+      designPngPath: basePath,
+      pagePngPath: candPath,
       heatmapPath: join(dir, "heatmap.png"),
       scale: 2,
-      clip: { w: 10, h: 5 },
-      aaThreshold: 0.1,
-      ignoreRegions: [],
+      threshold: 0.1,
     });
-    // 16 of 200 px differ.
     expect(res.diffPercent).toBeCloseTo(8, 5);
-    expect(res.heatmapPngRef).toBe(join(dir, "heatmap.png"));
-  });
-
-  test("ignore region masks the difference to zero", () => {
-    // Region in CSS px; scale 2 → covers the 4×4 device-px block.
-    const res = comparePixelDiff({
-      figmaPngPath: basePath,
-      domPngPath: candPath,
-      heatmapPath: join(dir, "heatmap-masked.png"),
-      scale: 2,
-      clip: { w: 10, h: 5 },
-      aaThreshold: 0.1,
-      ignoreRegions: [{ geometry: { x: 0, y: 0, w: 2, h: 2 } }],
-    });
-    expect(res.diffPercent).toBe(0);
   });
 });

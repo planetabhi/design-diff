@@ -1,55 +1,51 @@
 # design-diff
 
-A CLI that overlays your design on the live page so you can see what's off.
+Compare your running page against the design to find visual differences.
 
-Give it a design export (a PNG) and a URL. It screenshots the page at the same size and writes a self-contained `overlay.html` with a draggable before/after slider and a pixel-diff heatmap. No ids, no attributes, no markup changes.
-
-## What you get
-
-- **`overlay.html`** — drag the slider: left of the line is the design, right is the live page.
-- **Heatmap toggle** — highlights where pixels differ.
-- **`diffPercent`** — a rough number for how much differs.
-
-It's a review aid for your eyes, not a pass/fail gate. Text and anti-aliasing always differ a little between a design tool and a browser; the slider lets you look past that, which an automated score can't.
+A CLI that overlays a design export on a screenshot of your page. Move a slider to compare them side by side, lower the opacity to see one on top of the other, or view a pixel diff to see exactly which pixels differ.
 
 ## Usage
 
 ```sh
-# from a local design export (any tool: Figma, Sketch, a screenshot)
-design-diff http://localhost:3000 --png hero@2x.png
+# local design export
+bunx design-diff http://localhost:3000 --png design.png --scale 1 --open
 
-# or fetch the export straight from Figma (view access is enough)
-design-diff http://localhost:3000 --file <fileKey> --frame 10-2
+# or pull the export from Figma
+bunx design-diff http://localhost:3000 --file <fileKey> --frame <node-id> --scale 1 --open
 ```
 
-Then open the `overlay.html` it prints (or pass `--open`).
+The first run downloads Chromium once, then every run is instant. Needs [Bun](https://bun.sh).
 
 ```
---png <path>        Local design export. The viewport is derived from it.
---file <key>        Figma file key + --frame to fetch via the API.
---frame <nodeId>    Figma frame node-id (from the frame's URL, e.g. 10-2).
---scale <n>         Export scale = screenshot DPR (default 2).
---threshold <0..1>  pixelmatch threshold (default 0.1).
---auth <path>       Playwright storageState JSON for pages behind login.
---out <dir>         Output dir (default .design-diff).
---open              Open the resulting overlay.html.
+--png <path>        Design export (PNG) to compare against.
+--file <key>        Figma file key — use with --frame instead of --png.
+--frame <node-id>   Figma frame to export (from the frame's URL).
+--scale <n>         Match the export: 1 for 1x, 2 for retina (default 1).
+--threshold <0..1>  Pixel-diff sensitivity (default 0.1).
+--auth <path>       Playwright storageState for pages behind login.
+--out <dir>         Where the report is written (default .design-diff).
+--open              Open the report when done.
 ```
 
 ## How it works
 
-The design PNG defines the size. If it was exported at scale `S`, its pixel size is `frame × S`, so the page is screenshotted at `pngWidth/S × pngHeight/S` with `deviceScaleFactor = S`. Both images end up identical pixel dimensions, so they line up. The page is captured after fonts load, images finish, the network goes idle, and animations are disabled.
+The design PNG sets the size, the page is screenshotted at the same pixel dimensions, so the two line up exactly. It waits for fonts and images to load and turns off animations before capturing.
 
-With `--file/--frame` instead of `--png`, it fetches the frame's size and PNG from the Figma API (needs `DESIGN_DIFF_FIGMA_TOKEN`, view access is enough).
+With `--file/--frame`, it pulls the frame's size and PNG from the Figma API instead (needs `DESIGN_DIFF_FIGMA_TOKEN`).
 
-## Setup
+## Pages behind login
 
-Requires [Bun](https://bun.sh) — the CLI runs TypeScript directly.
+Save a logged-in session once, then pass it with `--auth`:
 
 ```sh
-bun install
-bunx playwright-core install chromium   # one-time, for the screenshot
+bunx playwright codegen --save-storage=auth.json https://your-app/login
+
+# log in in the window, then close it
+bunx design-diff https://your-app/dashboard --png design.png --auth auth.json --open
 ```
 
-## Scope
+`auth.json` holds cookies and localStorage — no credentials touch the tool. Redo it when the session expires.
 
-One design vs one URL per run, at a single size. Pages taller or shorter than the design are clipped to its box. Pages behind login: pass a Playwright `storageState` path via `--auth`.
+---
+
+By [@planetabhi](https://planetabhi.com/) ⋛⋋( ⊙◊⊙)⋌⋚

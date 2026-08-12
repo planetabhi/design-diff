@@ -1,5 +1,3 @@
-// Figma frame export: fetch the frame's box and render it to a PNG (view-only).
-
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Geometry } from "../types.ts";
@@ -20,22 +18,24 @@ async function figmaGet(path: string, token: string): Promise<any> {
     if (res.ok) return res.json();
     const retryable = res.status === 429 || res.status >= 500;
     if (!retryable || attempt >= MAX_RETRIES) {
-      throw new Error(`Figma API ${res.status} ${res.statusText} for ${path}`);
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(`Figma API ${res.status}: DESIGN_DIFF_FIGMA_TOKEN is invalid or lacks access to this file`);
+      }
+      if (res.status === 404) throw new Error("Figma API 404: file not found — check the --file key");
+      throw new Error(`Figma API ${res.status} ${res.statusText}`);
     }
     await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** attempt, 8000)));
   }
 }
 
-// Figma REST uses `10:2`; the URL's node-id is `10-2`. Accept either.
 function normalizeId(nodeId: string): string {
   return nodeId.replace(/-/g, ":");
 }
 
 export interface FrameExport {
-  box: Geometry; // frame size in CSS px (origin 0,0)
+  box: Geometry;
 }
 
-/** Export a single Figma frame to `outPath` and return its CSS-px size. */
 export async function exportDesignFrame(
   fileKey: string,
   frameNodeId: string,
@@ -61,7 +61,6 @@ export async function exportDesignFrame(
   return { box: { x: 0, y: 0, w: b.width, h: b.height } };
 }
 
-/** Render a node to PNG via the Figma image export endpoint, polling until ready. */
 async function exportNodePng(
   fileKey: string,
   nodeId: string,

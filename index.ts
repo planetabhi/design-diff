@@ -1,15 +1,14 @@
 #!/usr/bin/env bun
-// design-diff CLI — overlay a design PNG (or a Figma frame) on a live page.
 
-import { readFileSync, writeFileSync, copyFileSync, mkdirSync } from "node:fs";
-import { basename, join } from "node:path";
+import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { PNG } from "pngjs";
 import type { Geometry } from "./src/types.ts";
 import { exportDesignFrame } from "./src/fetch/figma.ts";
 import { screenshotPage } from "./src/fetch/dom.ts";
 import { comparePixelDiff } from "./src/compare/pixel.ts";
-import { renderSliderHtml } from "./src/overlay.ts";
+import { renderOverlayHtml } from "./src/overlay.ts";
 
 const USAGE = `design-diff — overlay a design on a live page
 
@@ -23,11 +22,11 @@ Design source (one required):
   --frame <nodeId>    Figma frame node-id (from the frame's URL, e.g. 10-2).
 
 Options:
-  --scale <n>         Export scale = screenshot DPR (default 2).
+  --scale <n>         Design export scale (1 for 1x, 2 for retina; default 1).
   --threshold <0..1>  pixelmatch matching threshold (default 0.1).
   --auth <path>       Playwright storageState JSON for pages behind login.
   --out <dir>         Output dir (default .design-diff).
-  --open              Open the resulting overlay.html.
+  --open              Open the report when done.
   -h, --help          Show this help.
 
 The Figma API path needs DESIGN_DIFF_FIGMA_TOKEN (view access is enough).`;
@@ -46,7 +45,7 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { scale: 2, threshold: 0.1, out: ".design-diff", open: false, help: false };
+  const a: Args = { scale: 1, threshold: 0.1, out: ".design-diff", open: false, help: false };
   const positionals: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]!;
@@ -88,58 +87,77 @@ if (args.help) {
 }
 if (!args.url) fail("missing <url>");
 if (!Number.isFinite(args.scale) || args.scale <= 0) fail("--scale must be a positive number");
+if (
+  !Number.isFinite(args.threshold) ||
+  args.threshold < 0 ||
+  args.threshold > 1
+) {
+  fail("--threshold must be between 0 and 1");
+}
 if (!args.png && !(args.file && args.frame)) {
   fail("provide a design source: --png <path>, or --file <key> --frame <nodeId>");
 }
 
-const runDir = join(args.out, new Date().toISOString().replace(/[:.]/g, "-"));
-mkdirSync(runDir, { recursive: true });
-const designPng = join(runDir, "design.png");
-const domPng = join(runDir, "dom.png");
-const heatmapPng = join(runDir, "heatmap.png");
-const htmlPath = join(runDir, "overlay.html");
+await run().catch((err: unknown) => {
+  console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+});
 
-// Resolve the design PNG + its CSS-px box (viewport for the screenshot).
-let box: Geometry;
-if (args.png) {
-  const png = PNG.sync.read(readFileSync(args.png));
-  copyFileSync(args.png, designPng);
-  box = { x: 0, y: 0, w: png.width / args.scale, h: png.height / args.scale };
-} else {
-  ({ box } = await exportDesignFrame(args.file!, args.frame!, args.scale, designPng));
+async function run(): Promise<void> {
+  if (args.png && !existsSync(args.png)) throw new Error(`design not found: ${resolve(args.png)}`);
+  if (args.auth && !existsSync(args.auth)) throw new Error(`auth file not found: ${resolve(args.auth)}`);
+
+  const runDir = join(args.out, new Date().toISOString().replace(/[:.]/g, "-"));
+  mkdirSync(runDir, { recursive: true });
+  const designPng = join(runDir, "design.png");
+  const domPng = join(runDir, "dom.png");
+  const heatmapPng = join(runDir, "heatmap.png");
+  const htmlPath = join(runDir, "overlay.html");
+
+  let box: Geometry;
+  if (args.png) {
+    let png: PNG;
+    try {
+      png = PNG.sync.read(readFileSync(args.png));
+    } catch {
+      throw new Error(`${args.png} is not a readable PNG`);
+    }
+    copyFileSync(args.png, designPng);
+    box = { x: 0, y: 0, w: png.width / args.scale, h: png.height / args.scale };
+  } else {
+    ({ box } = await exportDesignFrame(args.file!, args.frame!, args.scale, designPng));
+  }
+
+  const shot = await screenshotPage({
+    url: args.url!,
+    size: { w: box.w, h: box.h },
+    deviceScaleFactor: args.scale,
+    outPath: domPng,
+    authStateRef: args.auth,
+  });
+
+  const pixel = comparePixelDiff({
+    designPngPath: designPng,
+    pagePngPath: domPng,
+    heatmapPath: heatmapPng,
+    scale: args.scale,
+    threshold: args.threshold,
+  });
+
+  writeFileSync(
+    htmlPath,
+    renderOverlayHtml({
+      designSrc: basename(designPng),
+      domSrc: basename(domPng),
+      heatmapSrc: basename(heatmapPng),
+      width: shot.width,
+      height: shot.height,
+      diffPercent: pixel.diffPercent,
+    })
+  );
+
+  console.log(`overlay:     ${htmlPath}`);
+  console.log(`diffPercent: ${pixel.diffPercent.toFixed(2)}%`);
+  if (!shot.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
+  if (args.open) openFile(htmlPath);
 }
-
-const shot = await screenshotPage({
-  url: args.url,
-  size: { w: box.w, h: box.h },
-  deviceScaleFactor: args.scale,
-  outPath: domPng,
-  authStateRef: args.auth,
-});
-
-const pixel = comparePixelDiff({
-  figmaPngPath: designPng,
-  domPngPath: domPng,
-  heatmapPath: heatmapPng,
-  scale: args.scale,
-  clip: { w: box.w, h: box.h },
-  aaThreshold: args.threshold,
-  ignoreRegions: [],
-});
-
-writeFileSync(
-  htmlPath,
-  renderSliderHtml({
-    designSrc: basename(designPng),
-    domSrc: basename(domPng),
-    heatmapSrc: basename(heatmapPng),
-    width: shot.width,
-    height: shot.height,
-    diffPercent: pixel.diffPercent,
-  })
-);
-
-console.log(`overlay:    ${htmlPath}`);
-console.log(`diffPercent: ${pixel.diffPercent.toFixed(2)}%`);
-if (!shot.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
-if (args.open) openFile(htmlPath);

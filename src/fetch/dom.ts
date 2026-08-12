@@ -1,36 +1,34 @@
-// Screenshot the page at a fixed size (the Figma frame's box), with render gates.
-
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { chromium, type Browser } from "playwright-core";
 
 export interface ScreenshotOptions {
   url: string;
-  size: { w: number; h: number }; // CSS px — the Figma frame's box
+  size: { w: number; h: number };
   deviceScaleFactor: number;
   outPath: string;
-  authStateRef?: string; // Playwright storageState path for logged-in pages
+  authStateRef?: string;
 }
 
 export interface Readiness {
   fontsReady: boolean;
   imagesComplete: boolean;
-  animationsDisabled: boolean;
-  reducedMotion: boolean;
 }
 
 export interface ScreenshotResult {
   path: string;
-  width: number; // device px
-  height: number; // device px
+  width: number;
+  height: number;
   readiness: Readiness;
 }
 
-/** Load the page, wait for it to settle, and clip a screenshot to the frame size. */
 export async function screenshotPage(opts: ScreenshotOptions): Promise<ScreenshotResult> {
   const w = Math.round(opts.size.w);
   const h = Math.round(opts.size.h);
   let browser: Browser | undefined;
   try {
-    browser = await chromium.launch();
+    browser = await launchChromium();
     const context = await browser.newContext({
       viewport: { width: w, height: h },
       deviceScaleFactor: opts.deviceScaleFactor,
@@ -38,34 +36,47 @@ export async function screenshotPage(opts: ScreenshotOptions): Promise<Screensho
       ...(opts.authStateRef ? { storageState: opts.authStateRef } : {}),
     });
     const page = await context.newPage();
-    await page.goto(opts.url, { waitUntil: "load" });
+    try {
+      await page.goto(opts.url, { waitUntil: "load" });
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      if (/ERR_CONNECTION_REFUSED|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ERR_SOCKET/i.test(m)) {
+        throw new Error(`could not load ${opts.url} — is the server running?`);
+      }
+      throw err;
+    }
 
-    const fontsReady = await page.evaluate(async () => {
-      await document.fonts.ready;
-      return document.fonts.status === "loaded";
-    });
-    const imagesComplete = await page.evaluate(async () => {
-      const imgs = Array.from(document.images);
-      await Promise.all(
-        imgs.map((img) =>
-          img.complete
-            ? Promise.resolve()
-            : new Promise<void>((res) => {
-                img.addEventListener("load", () => res(), { once: true });
-                img.addEventListener("error", () => res(), { once: true });
-              })
-        )
-      );
-      return imgs.every((img) => img.complete);
-    });
-    await page.waitForLoadState("networkidle");
+    const fontsReady = await withTimeout(
+      page.evaluate(async () => {
+        await document.fonts.ready;
+        return document.fonts.status === "loaded";
+      }),
+      5000,
+      false
+    );
+    const imagesComplete = await withTimeout(
+      page.evaluate(async () => {
+        const imgs = Array.from(document.images);
+        await Promise.all(
+          imgs.map((img) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise<void>((res) => {
+                  img.addEventListener("load", () => res(), { once: true });
+                  img.addEventListener("error", () => res(), { once: true });
+                })
+          )
+        );
+        return imgs.every((img) => img.complete);
+      }),
+      5000,
+      false
+    );
+    await page.waitForLoadState("networkidle", { timeout: 2000 }).catch(() => {});
     await page.addStyleTag({
       content:
         "*{animation:none!important;transition:none!important;caret-color:transparent!important}",
     });
-    const reducedMotion = await page.evaluate(
-      () => matchMedia("(prefers-reduced-motion: reduce)").matches
-    );
 
     await page.screenshot({
       path: opts.outPath,
@@ -76,9 +87,37 @@ export async function screenshotPage(opts: ScreenshotOptions): Promise<Screensho
       path: opts.outPath,
       width: Math.round(w * opts.deviceScaleFactor),
       height: Math.round(h * opts.deviceScaleFactor),
-      readiness: { fontsReady, imagesComplete, animationsDisabled: true, reducedMotion },
+      readiness: { fontsReady, imagesComplete },
     };
   } finally {
     await browser?.close();
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+async function launchChromium(): Promise<Browser> {
+  try {
+    return await chromium.launch();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/Executable doesn.?t exist|playwright install|browserType\.launch/i.test(msg)) throw err;
+    process.stderr.write("Chromium not found — downloading it once…\n");
+    installChromium();
+    return chromium.launch();
+  }
+}
+
+function installChromium(): void {
+  const require = createRequire(import.meta.url);
+  const cli = join(dirname(require.resolve("playwright-core/package.json")), "cli.js");
+  const res = spawnSync(process.execPath, [cli, "install", "chromium"], { stdio: "inherit" });
+  if (res.status !== 0) {
+    throw new Error("automatic Chromium install failed — run: bunx playwright-core install chromium");
   }
 }
