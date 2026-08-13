@@ -5,12 +5,24 @@ export interface OverlayInput {
   width: number;
   height: number;
   diffPercent: number;
+  diffBounds?: DiffBoundsPct | null;
+}
+
+/** Diff bounding box as percentages of the frame, for CSS positioning. */
+export interface DiffBoundsPct {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
 }
 
 export function renderOverlayHtml(input: OverlayInput): string {
-  const { designSrc, domSrc, heatmapSrc, width, height, diffPercent } = input;
+  const { designSrc, domSrc, heatmapSrc, width, height, diffPercent, diffBounds } = input;
   const pct = diffPercent.toFixed(2);
   const diffColor = diffPercent > 1 ? "#ff8a80" : "#a5d6a7";
+  const boundsStyle = diffBounds
+    ? `left:${diffBounds.left.toFixed(4)}%;top:${diffBounds.top.toFixed(4)}%;width:${diffBounds.width.toFixed(4)}%;height:${diffBounds.height.toFixed(4)}%`
+    : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -54,6 +66,10 @@ export function renderOverlayHtml(input: OverlayInput): string {
     cursor: ew-resize; pointer-events: auto; display: grid; place-items: center;
     color: #fff; font-size: 12px; touch-action: none;
   }
+  #diffbox {
+    position: absolute; border: 2px dashed #ffb300; box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+    pointer-events: none; box-sizing: border-box;
+  }
 </style>
 </head>
 <body>
@@ -64,6 +80,7 @@ export function renderOverlayHtml(input: OverlayInput): string {
   <span class="right">
     <span class="diff">diff ${pct}%</span>
     <button id="heatBtn" aria-pressed="false">Heatmap</button>
+    ${boundsStyle ? `<button id="boundsBtn" aria-pressed="true">Bounds</button>` : ""}
   </span>
 </header>
 <div class="stage">
@@ -71,6 +88,7 @@ export function renderOverlayHtml(input: OverlayInput): string {
     <img id="dom" src="${domSrc}" alt="live page">
     <img id="design" src="${designSrc}" alt="design">
     <img id="heat" src="${heatmapSrc}" alt="pixel diff heatmap">
+    ${boundsStyle ? `<div id="diffbox" style="${boundsStyle}"></div>` : ""}
     <div id="divider"><div id="handle" title="drag to reveal">↔</div></div>
   </div>
 </div>
@@ -100,6 +118,16 @@ export function renderOverlayHtml(input: OverlayInput): string {
     heat.style.display = on ? 'none' : 'block';
     heatBtn.setAttribute('aria-pressed', String(!on));
   });
+
+  var boundsBtn = document.getElementById('boundsBtn');
+  var diffbox = document.getElementById('diffbox');
+  if (boundsBtn && diffbox) {
+    boundsBtn.addEventListener('click', function () {
+      var on = diffbox.style.display !== 'none';
+      diffbox.style.display = on ? 'none' : 'block';
+      boundsBtn.setAttribute('aria-pressed', String(!on));
+    });
+  }
 
   var dragging = false;
   function setFromX(clientX) {

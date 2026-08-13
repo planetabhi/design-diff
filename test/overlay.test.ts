@@ -39,3 +39,35 @@ describe("renderOverlayHtml", () => {
     expect(html.startsWith("<!doctype html>")).toBe(true);
   });
 });
+
+describe("renderOverlayHtml with diff bounds", () => {
+  test("renders the bounds box and toggle when bounds are given", () => {
+    const html = renderOverlayHtml({
+      designSrc: "design.png",
+      domSrc: "dom.png",
+      heatmapSrc: "heatmap.png",
+      width: 1000,
+      height: 500,
+      diffPercent: 5,
+      diffBounds: { left: 10, top: 20, width: 30, height: 40 },
+    });
+    expect(html).toContain('id="diffbox"');
+    expect(html).toContain("left:10.0000%");
+    expect(html).toContain("height:40.0000%");
+    expect(html).toContain('id="boundsBtn"');
+  });
+
+  test("omits the bounds box when there are no bounds", () => {
+    const html = renderOverlayHtml({
+      designSrc: "design.png",
+      domSrc: "dom.png",
+      heatmapSrc: "heatmap.png",
+      width: 1000,
+      height: 500,
+      diffPercent: 0,
+      diffBounds: null,
+    });
+    expect(html).not.toContain('id="diffbox"');
+    expect(html).not.toContain('id="boundsBtn"');
+  });
+});

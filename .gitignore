@@ -153,3 +153,7 @@ Thumbs.db
 
 # design-diff run artifacts
 .design-diff/
+
+# local scratch files
+plan.md
+dummy.png

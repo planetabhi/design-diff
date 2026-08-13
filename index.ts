@@ -144,6 +144,15 @@ async function run(): Promise<void> {
     threshold: args.threshold,
   });
 
+  const diffBounds = pixel.bounds
+    ? {
+        left: ((pixel.bounds.x * args.scale) / shot.width) * 100,
+        top: ((pixel.bounds.y * args.scale) / shot.height) * 100,
+        width: ((pixel.bounds.width * args.scale) / shot.width) * 100,
+        height: ((pixel.bounds.height * args.scale) / shot.height) * 100,
+      }
+    : null;
+
   writeFileSync(
     htmlPath,
     renderOverlayHtml({
@@ -153,11 +162,54 @@ async function run(): Promise<void> {
       width: shot.width,
       height: shot.height,
       diffPercent: pixel.diffPercent,
+      diffBounds,
     })
   );
 
-  console.log(`overlay:     ${htmlPath}`);
-  console.log(`diffPercent: ${pixel.diffPercent.toFixed(2)}%`);
+  const metricsPath = join(runDir, "metrics.json");
+  writeFileSync(
+    metricsPath,
+    JSON.stringify(
+      {
+        url: args.url,
+        matchPercent: pixel.matchPercent,
+        diffPercent: pixel.diffPercent,
+        changedPixels: pixel.changedPixels,
+        totalPixels: pixel.totalPixels,
+        coveragePercent: pixel.coveragePercent,
+        bounds: pixel.bounds,
+      },
+      null,
+      2
+    )
+  );
+
+  console.log(formatReport(pixel));
+  console.log(`\noverlay: ${htmlPath}`);
+  console.log(`metrics: ${metricsPath}`);
   if (!shot.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
   if (args.open) openFile(htmlPath);
+}
+
+function formatReport(p: ReturnType<typeof comparePixelDiff>): string {
+  const lines = [
+    "DESIGN DIFF",
+    "────────────────────────",
+    "",
+    `Visual match    ${p.matchPercent.toFixed(1)}%`,
+    `Changed pixels  ${p.diffPercent.toFixed(1)}%`,
+  ];
+  if (p.bounds) {
+    const b = p.bounds;
+    lines.push(
+      "",
+      "Diff bounds",
+      `x=${b.x}..${b.x + b.width}`,
+      `y=${b.y}..${b.y + b.height}`,
+      `coverage=${p.coveragePercent.toFixed(1)}%`
+    );
+  } else {
+    lines.push("", "No differences.");
+  }
+  return lines.join("\n");
 }
