@@ -155,11 +155,14 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
     resolvedIgnore.push(...shot.ignoreRects);
   }
 
+  // Image mode has no CSS/device relationship, so bounds stay in image pixels.
+  const compareScale = opts.actual ? 1 : scale;
+
   const pixel = comparePixelDiff({
     designPngPath: designPng,
     pagePngPath: domPng,
     heatmapPath: writeHeatmap ? heatmapPng : undefined,
-    scale,
+    scale: compareScale,
     threshold,
     ignore: resolvedIgnore,
   });
@@ -167,10 +170,10 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
   if (writeOverlay) {
     const diffBoundsPct = pixel.bounds
       ? {
-          left: ((pixel.bounds.x * scale) / pageWidth) * 100,
-          top: ((pixel.bounds.y * scale) / pageHeight) * 100,
-          width: ((pixel.bounds.width * scale) / pageWidth) * 100,
-          height: ((pixel.bounds.height * scale) / pageHeight) * 100,
+          left: ((pixel.bounds.x * compareScale) / pageWidth) * 100,
+          top: ((pixel.bounds.y * compareScale) / pageHeight) * 100,
+          width: ((pixel.bounds.width * compareScale) / pageWidth) * 100,
+          height: ((pixel.bounds.height * compareScale) / pageHeight) * 100,
         }
       : null;
 

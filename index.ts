@@ -126,6 +126,7 @@ if (args.help) {
   process.exit(0);
 }
 if (!args.url && !args.actual) fail("provide a <url> or --actual <image>");
+if (args.url && args.actual) fail("provide either a <url> or --actual <image>, not both");
 if (!Number.isFinite(args.scale) || args.scale <= 0) fail("--scale must be a positive number");
 if (
   !Number.isFinite(args.threshold) ||

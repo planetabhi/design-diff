@@ -18,6 +18,7 @@ bunx design-diff http://localhost:3000 --file <fileKey> --frame <node-id> --scal
 --png <path>        Design export (PNG) to compare against.
 --file <key>        Figma file key. Use with --frame instead of --png.
 --frame <node-id>   Figma frame to export (from the frame's URL).
+--actual <path>     Compare a local PNG instead of screenshotting the url.
 --scale <n>         Match the export: 1 for 1x, 2 for retina (default 1).
 --threshold <0..1>  Pixel-diff sensitivity (default 0.1).
 --auth <path>       Playwright storageState for pages behind login.
@@ -58,7 +59,7 @@ Skip the browser entirely and diff two local PNGs with `--actual`. Handy offline
 bunx design-diff --actual screenshot.png --png design.png --json
 ```
 
-No page means no `--wait-for`, `--ignore-selector`, or `readiness` — everything else works the same.
+No page means no `--wait-for`, `--ignore-selector`, or `readiness`. `--scale` is ignored too — bounds are reported in image pixels. Everything else works the same.
 
 ## Pages behind login
 
