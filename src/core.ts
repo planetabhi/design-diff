@@ -24,7 +24,10 @@ export interface FigmaSource {
 }
 
 export interface DesignDiffOptions {
-  url: string;
+  /** Page to screenshot. Provide this or `actual`, not both. */
+  url?: string;
+  /** Local PNG to compare instead of screenshotting a url. */
+  actual?: string;
   /** Local PNG path, or a Figma file/frame reference. */
   design: string | FigmaSource;
   scale?: number;
@@ -57,7 +60,8 @@ export interface DesignDiffResult {
     overlay?: string;
     metrics: string;
   };
-  readiness: Readiness;
+  /** Page load signals; absent in image-vs-image mode. */
+  readiness?: Readiness;
 }
 
 function isFigmaSource(design: string | FigmaSource): design is FigmaSource {
@@ -69,7 +73,8 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
   const threshold = opts.threshold ?? 0.1;
   const outDir = opts.outDir ?? ".design-diff";
 
-  if (!opts.url) throw new Error("missing url");
+  if (!opts.url && !opts.actual) throw new Error("provide a url to screenshot or an actual image path");
+  if (opts.url && opts.actual) throw new Error("provide either a url or an actual image, not both");
   if (!Number.isFinite(scale) || scale <= 0) throw new Error("scale must be a positive number");
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
     throw new Error("threshold must be between 0 and 1");
@@ -77,6 +82,7 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
 
   const pngPath = isFigmaSource(opts.design) ? undefined : opts.design;
   if (pngPath && !existsSync(pngPath)) throw new Error(`design not found: ${resolve(pngPath)}`);
+  if (opts.actual && !existsSync(opts.actual)) throw new Error(`actual image not found: ${resolve(opts.actual)}`);
   if (opts.auth && !existsSync(opts.auth)) throw new Error(`auth file not found: ${resolve(opts.auth)}`);
 
   const writeOverlay = opts.writeOverlay ?? true;
@@ -90,6 +96,10 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
   }
   const waitFor =
     opts.waitFor == null ? [] : Array.isArray(opts.waitFor) ? opts.waitFor : [opts.waitFor];
+
+  if (opts.actual && (waitFor.length || ignoreSelectors.length)) {
+    throw new Error("waitFor and ignore selectors require a url, not an actual image");
+  }
 
   const runDir = join(outDir, new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(runDir, { recursive: true });
@@ -114,16 +124,36 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
     ({ box } = await exportDesignFrame(src.fileKey, src.frameId, scale, designPng));
   }
 
-  const shot = await screenshotPage({
-    url: opts.url,
-    size: { w: box.w, h: box.h },
-    deviceScaleFactor: scale,
-    outPath: domPng,
-    authStateRef: opts.auth,
-    browser: opts.browser,
-    waitFor,
-    ignoreSelectors,
-  });
+  let pageWidth: number;
+  let pageHeight: number;
+  let readiness: Readiness | undefined;
+  const resolvedIgnore: IgnoreRegion[] = [...ignoreRects];
+  if (opts.actual) {
+    copyFileSync(opts.actual, domPng);
+    let actualPng: PNG;
+    try {
+      actualPng = PNG.sync.read(readFileSync(domPng));
+    } catch {
+      throw new Error(`${opts.actual} is not a readable PNG`);
+    }
+    pageWidth = actualPng.width;
+    pageHeight = actualPng.height;
+  } else {
+    const shot = await screenshotPage({
+      url: opts.url!,
+      size: { w: box.w, h: box.h },
+      deviceScaleFactor: scale,
+      outPath: domPng,
+      authStateRef: opts.auth,
+      browser: opts.browser,
+      waitFor,
+      ignoreSelectors,
+    });
+    pageWidth = shot.width;
+    pageHeight = shot.height;
+    readiness = shot.readiness;
+    resolvedIgnore.push(...shot.ignoreRects);
+  }
 
   const pixel = comparePixelDiff({
     designPngPath: designPng,
@@ -131,16 +161,16 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
     heatmapPath: writeHeatmap ? heatmapPng : undefined,
     scale,
     threshold,
-    ignore: [...ignoreRects, ...shot.ignoreRects],
+    ignore: resolvedIgnore,
   });
 
   if (writeOverlay) {
     const diffBoundsPct = pixel.bounds
       ? {
-          left: ((pixel.bounds.x * scale) / shot.width) * 100,
-          top: ((pixel.bounds.y * scale) / shot.height) * 100,
-          width: ((pixel.bounds.width * scale) / shot.width) * 100,
-          height: ((pixel.bounds.height * scale) / shot.height) * 100,
+          left: ((pixel.bounds.x * scale) / pageWidth) * 100,
+          top: ((pixel.bounds.y * scale) / pageHeight) * 100,
+          width: ((pixel.bounds.width * scale) / pageWidth) * 100,
+          height: ((pixel.bounds.height * scale) / pageHeight) * 100,
         }
       : null;
 
@@ -150,8 +180,8 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
         designSrc: basename(designPng),
         domSrc: basename(domPng),
         heatmapSrc: basename(heatmapPng),
-        width: shot.width,
-        height: shot.height,
+        width: pageWidth,
+        height: pageHeight,
         diffPercent: pixel.diffPercent,
         diffBounds: diffBoundsPct,
       })
@@ -159,7 +189,7 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
   }
 
   const result: DesignDiffResult = {
-    url: opts.url,
+    url: opts.url ?? opts.actual!,
     matchPercent: round2(pixel.matchPercent),
     diffPercent: round2(pixel.diffPercent),
     changedPixels: pixel.changedPixels,
@@ -173,7 +203,7 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
       overlay: writeOverlay ? overlayPath : undefined,
       metrics: metricsPath,
     },
-    readiness: shot.readiness,
+    readiness,
   };
 
   writeFileSync(metricsPath, JSON.stringify(metricsOf(result), null, 2));

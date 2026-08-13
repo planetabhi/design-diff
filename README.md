@@ -50,6 +50,16 @@ Use `--wait-for` to hold the capture until a selector appears, removing most “
 bunx design-diff http://localhost:3000 --png design.png --wait-for ".hero-loaded"
 ```
 
+## Compare two images
+
+Skip the browser entirely and diff two local PNGs with `--actual`. Handy offline, in tests, or when you already captured the screenshot elsewhere.
+
+```sh
+bunx design-diff --actual screenshot.png --png design.png --json
+```
+
+No page means no `--wait-for`, `--ignore-selector`, or `readiness` — everything else works the same.
+
 ## Pages behind login
 
 Save a logged-in session once, then pass it with `--auth`.
@@ -124,7 +134,7 @@ writes to `metrics.json` plus the paths of every artifact.
 import { designDiff } from "design-diff";
 
 const result = await designDiff({
-  url: "http://localhost:3000",
+  url: "http://localhost:3000", // or actual: "screenshot.png" for image-vs-image
   design: "design.png", // or { fileKey, frameId }
   scale: 1,
   threshold: 0.1,
