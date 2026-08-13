@@ -8,6 +8,7 @@ const USAGE = `design-diff — overlay a design on a live page
 Usage:
   design-diff <url> --png <design.png> [options]
   design-diff <url> --file <fileKey> --frame <nodeId> [options]
+  design-diff --actual <page.png> --png <design.png> [options]
 
 Design source (one required):
   --png <path>        Local design export (PNG). Viewport is derived from it.
@@ -15,6 +16,7 @@ Design source (one required):
   --frame <nodeId>    Figma frame node-id (from the frame's URL, e.g. 10-2).
 
 Options:
+  --actual <path>     Compare a local PNG instead of screenshotting a url.
   --scale <n>         Design export scale (1 for 1x, 2 for retina; default 1).
   --threshold <0..1>  pixelmatch matching threshold (default 0.1).
   --auth <path>       Playwright storageState JSON for pages behind login.
@@ -32,6 +34,7 @@ The Figma API path needs DESIGN_DIFF_FIGMA_TOKEN (view access is enough).`;
 
 interface Args {
   url?: string;
+  actual?: string;
   png?: string;
   file?: string;
   frame?: string;
@@ -72,6 +75,7 @@ function parseArgs(argv: string[]): Args {
       case "--json": a.json = true; break;
       case "--no-overlay": a.noOverlay = true; break;
       case "--png": a.png = argv[++i]; break;
+      case "--actual": a.actual = argv[++i]; break;
       case "--file": a.file = argv[++i]; break;
       case "--frame": a.frame = argv[++i]; break;
       case "--scale": a.scale = Number(argv[++i]); break;
@@ -121,7 +125,7 @@ if (args.help) {
   console.log(USAGE);
   process.exit(0);
 }
-if (!args.url) fail("missing <url>");
+if (!args.url && !args.actual) fail("provide a <url> or --actual <image>");
 if (!Number.isFinite(args.scale) || args.scale <= 0) fail("--scale must be a positive number");
 if (
   !Number.isFinite(args.threshold) ||
@@ -148,7 +152,8 @@ async function run(): Promise<void> {
     ...args.ignoreSelectors.map((selector) => ({ selector })),
   ];
   const result = await designDiff({
-    url: args.url!,
+    url: args.url,
+    actual: args.actual,
     design: args.png ? args.png : { fileKey: args.file!, frameId: args.frame! },
     scale: args.scale,
     threshold: args.threshold,
@@ -165,7 +170,7 @@ async function run(): Promise<void> {
     console.log(formatReport(result));
     if (result.paths.overlay) console.log(`\noverlay: ${result.paths.overlay}`);
     console.log(`metrics: ${result.paths.metrics}`);
-    if (!result.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
+    if (result.readiness && !result.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
     if (args.open && result.paths.overlay) openFile(result.paths.overlay);
   }
 
