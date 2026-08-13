@@ -1,6 +1,6 @@
 {
   "name": "design-diff",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "CLI for overlaying design exports or Figma frames on live pages, with a before/after slider and pixel-diff heatmap.",
   "module": "index.ts",
   "type": "module",
