@@ -1,14 +1,8 @@
 #!/usr/bin/env bun
 
-import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { PNG } from "pngjs";
-import type { Geometry } from "./src/types.ts";
-import { exportDesignFrame } from "./src/fetch/figma.ts";
-import { screenshotPage } from "./src/fetch/dom.ts";
-import { comparePixelDiff } from "./src/compare/pixel.ts";
-import { renderOverlayHtml } from "./src/overlay.ts";
+import { designDiff, metricsOf, type DesignDiffResult } from "./src/core.ts";
+import type { IgnoreRegion } from "./src/compare/pixel.ts";
 
 const USAGE = `design-diff — overlay a design on a live page
 
@@ -26,6 +20,9 @@ Options:
   --threshold <0..1>  pixelmatch matching threshold (default 0.1).
   --auth <path>       Playwright storageState JSON for pages behind login.
   --out <dir>         Output dir (default .design-diff).
+  --ignore <x,y,w,h>  Rectangle (CSS px) to exclude from the diff. Repeatable.
+  --fail-under <pct>  Exit 1 when the visual match is below this percentage.
+  --json              Print the result as JSON to stdout and nothing else.
   --open              Open the report when done.
   -h, --help          Show this help.
 
@@ -40,12 +37,23 @@ interface Args {
   threshold: number;
   auth?: string;
   out: string;
+  ignore: IgnoreRegion[];
+  failUnder?: number;
+  json: boolean;
   open: boolean;
   help: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { scale: 1, threshold: 0.1, out: ".design-diff", open: false, help: false };
+  const a: Args = {
+    scale: 1,
+    threshold: 0.1,
+    out: ".design-diff",
+    ignore: [],
+    json: false,
+    open: false,
+    help: false,
+  };
   const positionals: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]!;
@@ -53,11 +61,14 @@ function parseArgs(argv: string[]): Args {
       case "-h":
       case "--help": a.help = true; break;
       case "--open": a.open = true; break;
+      case "--json": a.json = true; break;
       case "--png": a.png = argv[++i]; break;
       case "--file": a.file = argv[++i]; break;
       case "--frame": a.frame = argv[++i]; break;
       case "--scale": a.scale = Number(argv[++i]); break;
       case "--threshold": a.threshold = Number(argv[++i]); break;
+      case "--fail-under": a.failUnder = Number(argv[++i]); break;
+      case "--ignore": a.ignore.push(parseIgnore(argv[++i])); break;
       case "--auth": a.auth = argv[++i]; break;
       case "--out": a.out = argv[++i] ?? a.out; break;
       default:
@@ -67,6 +78,15 @@ function parseArgs(argv: string[]): Args {
   }
   a.url = positionals[0];
   return a;
+}
+
+function parseIgnore(spec: string | undefined): IgnoreRegion {
+  const parts = (spec ?? "").split(",").map((n) => Number(n.trim()));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
+    fail(`--ignore expects x,y,w,h (got "${spec ?? ""}")`);
+  }
+  const [x, y, width, height] = parts as [number, number, number, number];
+  return { x, y, width, height };
 }
 
 function fail(msg: string): never {
@@ -94,6 +114,9 @@ if (
 ) {
   fail("--threshold must be between 0 and 1");
 }
+if (args.failUnder !== undefined && (!Number.isFinite(args.failUnder) || args.failUnder < 0 || args.failUnder > 100)) {
+  fail("--fail-under must be between 0 and 100");
+}
 if (!args.png && !(args.file && args.frame)) {
   fail("provide a design source: --png <path>, or --file <key> --frame <nodeId>");
 }
@@ -104,110 +127,45 @@ await run().catch((err: unknown) => {
 });
 
 async function run(): Promise<void> {
-  if (args.png && !existsSync(args.png)) throw new Error(`design not found: ${resolve(args.png)}`);
-  if (args.auth && !existsSync(args.auth)) throw new Error(`auth file not found: ${resolve(args.auth)}`);
-
-  const runDir = join(args.out, new Date().toISOString().replace(/[:.]/g, "-"));
-  mkdirSync(runDir, { recursive: true });
-  const designPng = join(runDir, "design.png");
-  const domPng = join(runDir, "dom.png");
-  const heatmapPng = join(runDir, "heatmap.png");
-  const htmlPath = join(runDir, "overlay.html");
-
-  let box: Geometry;
-  if (args.png) {
-    let png: PNG;
-    try {
-      png = PNG.sync.read(readFileSync(args.png));
-    } catch {
-      throw new Error(`${args.png} is not a readable PNG`);
-    }
-    copyFileSync(args.png, designPng);
-    box = { x: 0, y: 0, w: png.width / args.scale, h: png.height / args.scale };
-  } else {
-    ({ box } = await exportDesignFrame(args.file!, args.frame!, args.scale, designPng));
-  }
-
-  const shot = await screenshotPage({
+  const result = await designDiff({
     url: args.url!,
-    size: { w: box.w, h: box.h },
-    deviceScaleFactor: args.scale,
-    outPath: domPng,
-    authStateRef: args.auth,
-  });
-
-  const pixel = comparePixelDiff({
-    designPngPath: designPng,
-    pagePngPath: domPng,
-    heatmapPath: heatmapPng,
+    design: args.png ? args.png : { fileKey: args.file!, frameId: args.frame! },
     scale: args.scale,
     threshold: args.threshold,
+    auth: args.auth,
+    outDir: args.out,
+    ignore: args.ignore.length ? args.ignore : undefined,
   });
 
-  const diffBounds = pixel.bounds
-    ? {
-        left: ((pixel.bounds.x * args.scale) / shot.width) * 100,
-        top: ((pixel.bounds.y * args.scale) / shot.height) * 100,
-        width: ((pixel.bounds.width * args.scale) / shot.width) * 100,
-        height: ((pixel.bounds.height * args.scale) / shot.height) * 100,
-      }
-    : null;
+  if (args.json) {
+    console.log(JSON.stringify(metricsOf(result), null, 2));
+  } else {
+    console.log(formatReport(result));
+    console.log(`\noverlay: ${result.paths.overlay}`);
+    console.log(`metrics: ${result.paths.metrics}`);
+    if (!result.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
+    if (args.open) openFile(result.paths.overlay);
+  }
 
-  writeFileSync(
-    htmlPath,
-    renderOverlayHtml({
-      designSrc: basename(designPng),
-      domSrc: basename(domPng),
-      heatmapSrc: basename(heatmapPng),
-      width: shot.width,
-      height: shot.height,
-      diffPercent: pixel.diffPercent,
-      diffBounds,
-    })
-  );
-
-  const metricsPath = join(runDir, "metrics.json");
-  writeFileSync(
-    metricsPath,
-    JSON.stringify(
-      {
-        url: args.url,
-        matchPercent: round2(pixel.matchPercent),
-        diffPercent: round2(pixel.diffPercent),
-        changedPixels: pixel.changedPixels,
-        totalPixels: pixel.totalPixels,
-        coveragePercent: round2(pixel.coveragePercent),
-        diffBounds: pixel.bounds,
-      },
-      null,
-      2
-    )
-  );
-
-  console.log(formatReport(pixel));
-  console.log(`\noverlay: ${htmlPath}`);
-  console.log(`metrics: ${metricsPath}`);
-  if (!shot.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
-  if (args.open) openFile(htmlPath);
+  if (args.failUnder !== undefined && result.matchPercent < args.failUnder) {
+    process.exit(1);
+  }
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-function formatReport(p: ReturnType<typeof comparePixelDiff>): string {
-  const lines = ["DESIGN DIFF", "────────────────────────", "", `Visual match    ${p.matchPercent.toFixed(1)}%`];
-  if (p.bounds) {
-    const b = p.bounds;
+function formatReport(r: DesignDiffResult): string {
+  const lines = ["DESIGN DIFF", "────────────────────────", "", `Visual match    ${r.matchPercent.toFixed(1)}%`];
+  if (r.diffBounds) {
+    const b = r.diffBounds;
     lines.push(
       "",
       "Diff bounds",
       `x=${b.x}..${b.x + b.width}`,
       `y=${b.y}..${b.y + b.height}`,
-      `page coverage=${p.coveragePercent.toFixed(1)}%`
+      `page coverage=${r.coveragePercent.toFixed(1)}%`
     );
   } else {
     lines.push("", "No differences.");
   }
   return lines.join("\n");
 }
+

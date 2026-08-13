@@ -1,8 +1,6 @@
 # design-diff
 
-Compare your running page against the design to find visual differences.
-
-A CLI that overlays a design export on a screenshot of your page. Move a slider to compare them side by side, lower the opacity to see one on top of the other, or view a pixel diff to see exactly which pixels differ.
+A CLI and library that overlays a design export on a screenshot of your page. Move a slider to compare them side by side, lower the opacity to see one on top of the other, or view a pixel diff to see exactly which pixels differ.
 
 ## Usage
 
@@ -14,7 +12,7 @@ bunx design-diff http://localhost:3000 --png design.png --scale 1 --open
 bunx design-diff http://localhost:3000 --file <fileKey> --frame <node-id> --scale 1 --open
 ```
 
-The first run downloads Chromium once, then every run is instant. Needs [Bun](https://bun.sh).
+> Note: The first run downloads Chromium once, then every run is instant. Needs [Bun](https://bun.sh).
 
 ```
 --png <path>        Design export (PNG) to compare against.
@@ -24,6 +22,9 @@ The first run downloads Chromium once, then every run is instant. Needs [Bun](ht
 --threshold <0..1>  Pixel-diff sensitivity (default 0.1).
 --auth <path>       Playwright storageState for pages behind login.
 --out <dir>         Where the report is written (default .design-diff).
+--ignore <x,y,w,h>  Rectangle (CSS px) to exclude from the diff. Repeatable.
+--fail-under <pct>  Exit 1 when the visual match is below this percentage.
+--json              Print the result as JSON to stdout and nothing else.
 --open              Open the report when done.
 ```
 
@@ -33,9 +34,29 @@ The design PNG sets the size, the page is screenshotted at the same pixel dimens
 
 With `--file/--frame`, it pulls the frame's size and PNG from the Figma API instead (needs `DESIGN_DIFF_FIGMA_TOKEN`).
 
+Use `--ignore` to mask dynamic regions (avatars, timestamps) so they never count as differences. Coordinates are CSS pixels, repeat the flag for multiple boxes.
+
+```sh
+bunx design-diff http://localhost:3000 --png design.png \
+  --ignore 24,24,48,48 --ignore 0,900,1440,120
+```
+
+## Pages behind login
+
+Save a logged-in session once, then pass it with `--auth`.
+
+```sh
+bunx playwright codegen --save-storage=auth.json https://your-app/login
+
+# log in in the window, then close it
+bunx design-diff https://your-app/dashboard --png design.png --auth auth.json --open
+```
+
+`auth.json` holds cookies and localStorage. No credentials touch the tool. Redo it when the session expires.
+
 ## Metrics
 
-Every run prints a short report and answers three questions:
+Every run prints a short report and answers three questions.
 
 ```
 DESIGN DIFF
@@ -49,9 +70,12 @@ y=0..902
 page coverage=100.0%
 ```
 
-- **Visual match**: how many pixels line up (`100% − changed`). The headline score.
-- **Diff bounds**: the box enclosing every changed pixel, in CSS pixels. A tight box means one component is off. A box spanning the page points at a layout, viewport, or font problem.
-- **Page coverage**: how much of the page that box spans. Tells a local issue from a global one.
+| Metric | What it tells you |
+| --- | --- |
+| **Visual match** | How many pixels line up. The headline score. |
+| **Diff bounds** | The box enclosing every changed pixel, in CSS pixels. A tight box means one component is off, a box spanning the page points at a layout, viewport, or font problem. |
+| **Page coverage** | How much of the page that box spans. Tells a local issue from a global one. |
+
 
 The same numbers are written to `metrics.json` in the run folder for scripting:
 
@@ -69,18 +93,52 @@ The same numbers are written to `metrics.json` in the run folder for scripting:
 
 The overlay report draws the diff bounds as a box you can toggle on and off.
 
-## Pages behind login
+## Scripting and CI
 
-Save a logged-in session once, then pass it with `--auth`:
+Use `--json` to print only the result to stdout, and `--fail-under` to turn the
+visual match into a pass/fail gate (exit 1 when below the threshold).
 
 ```sh
-bunx playwright codegen --save-storage=auth.json https://your-app/login
-
-# log in in the window, then close it
-bunx design-diff https://your-app/dashboard --png design.png --auth auth.json --open
+bunx design-diff http://localhost:3000 --png design.png --json --fail-under 98
 ```
 
-`auth.json` holds cookies and localStorage. No credentials touch the tool. Redo it when the session expires.
+`--fail-under` compares against **Visual match** (a percentage). It is separate
+from `--threshold`, which is the per-pixel colour sensitivity.
+
+## Programmatic API
+
+The CLI is a thin wrapper around `designDiff`, which returns the same data it
+writes to `metrics.json` plus the paths of every artifact.
+
+```ts
+import { designDiff } from "design-diff";
+
+const result = await designDiff({
+  url: "http://localhost:3000",
+  design: "design.png", // or { fileKey, frameId }
+  scale: 1,
+  threshold: 0.1,
+  ignore: [{ x: 24, y: 24, width: 48, height: 48 }],
+});
+
+if (result.matchPercent < 98) process.exit(1);
+```
+
+Running the tool in a loop? Reuse one browser instead of launching Chromium each
+time.
+
+```ts
+import { designDiff, launchBrowser } from "design-diff";
+
+const browser = await launchBrowser();
+try {
+  for (const url of urls) {
+    await designDiff({ url, design: "design.png", browser });
+  }
+} finally {
+  await browser.close();
+}
+```
 
 ---
 
