@@ -89,4 +89,19 @@ describe("comparePixelDiff", () => {
     expect(res.bounds).toBeNull();
     expect(res.coveragePercent).toBe(0);
   });
+
+  test("ignore regions exclude masked pixels from the diff", () => {
+    // The 4x4 device block sits at device 0..4, i.e. 0..2 in CSS px at scale 2.
+    const res = comparePixelDiff({
+      designPngPath: basePath,
+      pagePngPath: candPath,
+      heatmapPath: join(dir, "heatmap4.png"),
+      scale: 2,
+      threshold: 0.1,
+      ignore: [{ x: 0, y: 0, width: 2, height: 2 }],
+    });
+    expect(res.changedPixels).toBe(0);
+    expect(res.matchPercent).toBe(100);
+    expect(res.bounds).toBeNull();
+  });
 });

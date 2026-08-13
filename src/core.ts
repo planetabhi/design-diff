@@ -11,6 +11,13 @@ import { renderOverlayHtml } from "./overlay.ts";
 export { launchBrowser };
 export type { DiffBounds, IgnoreRegion, Readiness };
 
+export interface IgnoreSelector {
+  /** CSS selector; every matching element's box is masked. */
+  selector: string;
+}
+
+export type IgnoreInput = IgnoreRegion | IgnoreSelector;
+
 export interface FigmaSource {
   fileKey: string;
   frameId: string;
@@ -24,7 +31,13 @@ export interface DesignDiffOptions {
   threshold?: number;
   auth?: string;
   outDir?: string;
-  ignore?: IgnoreRegion[];
+  ignore?: IgnoreInput[];
+  /** CSS selector(s) to wait for before the screenshot. */
+  waitFor?: string | string[];
+  /** Write overlay.html (default true). */
+  writeOverlay?: boolean;
+  /** Write heatmap.png (default true; forced on when the overlay is written). */
+  writeHeatmap?: boolean;
   /** Reuse a shared browser instead of launching one per call. */
   browser?: Browser;
 }
@@ -40,8 +53,8 @@ export interface DesignDiffResult {
   paths: {
     design: string;
     page: string;
-    heatmap: string;
-    overlay: string;
+    heatmap?: string;
+    overlay?: string;
     metrics: string;
   };
   readiness: Readiness;
@@ -65,6 +78,18 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
   const pngPath = isFigmaSource(opts.design) ? undefined : opts.design;
   if (pngPath && !existsSync(pngPath)) throw new Error(`design not found: ${resolve(pngPath)}`);
   if (opts.auth && !existsSync(opts.auth)) throw new Error(`auth file not found: ${resolve(opts.auth)}`);
+
+  const writeOverlay = opts.writeOverlay ?? true;
+  const writeHeatmap = (opts.writeHeatmap ?? true) || writeOverlay;
+
+  const ignoreRects: IgnoreRegion[] = [];
+  const ignoreSelectors: string[] = [];
+  for (const item of opts.ignore ?? []) {
+    if ("selector" in item) ignoreSelectors.push(item.selector);
+    else ignoreRects.push(item);
+  }
+  const waitFor =
+    opts.waitFor == null ? [] : Array.isArray(opts.waitFor) ? opts.waitFor : [opts.waitFor];
 
   const runDir = join(outDir, new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(runDir, { recursive: true });
@@ -96,38 +121,42 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
     outPath: domPng,
     authStateRef: opts.auth,
     browser: opts.browser,
+    waitFor,
+    ignoreSelectors,
   });
 
   const pixel = comparePixelDiff({
     designPngPath: designPng,
     pagePngPath: domPng,
-    heatmapPath: heatmapPng,
+    heatmapPath: writeHeatmap ? heatmapPng : undefined,
     scale,
     threshold,
-    ignore: opts.ignore,
+    ignore: [...ignoreRects, ...shot.ignoreRects],
   });
 
-  const diffBoundsPct = pixel.bounds
-    ? {
-        left: ((pixel.bounds.x * scale) / shot.width) * 100,
-        top: ((pixel.bounds.y * scale) / shot.height) * 100,
-        width: ((pixel.bounds.width * scale) / shot.width) * 100,
-        height: ((pixel.bounds.height * scale) / shot.height) * 100,
-      }
-    : null;
+  if (writeOverlay) {
+    const diffBoundsPct = pixel.bounds
+      ? {
+          left: ((pixel.bounds.x * scale) / shot.width) * 100,
+          top: ((pixel.bounds.y * scale) / shot.height) * 100,
+          width: ((pixel.bounds.width * scale) / shot.width) * 100,
+          height: ((pixel.bounds.height * scale) / shot.height) * 100,
+        }
+      : null;
 
-  writeFileSync(
-    overlayPath,
-    renderOverlayHtml({
-      designSrc: basename(designPng),
-      domSrc: basename(domPng),
-      heatmapSrc: basename(heatmapPng),
-      width: shot.width,
-      height: shot.height,
-      diffPercent: pixel.diffPercent,
-      diffBounds: diffBoundsPct,
-    })
-  );
+    writeFileSync(
+      overlayPath,
+      renderOverlayHtml({
+        designSrc: basename(designPng),
+        domSrc: basename(domPng),
+        heatmapSrc: basename(heatmapPng),
+        width: shot.width,
+        height: shot.height,
+        diffPercent: pixel.diffPercent,
+        diffBounds: diffBoundsPct,
+      })
+    );
+  }
 
   const result: DesignDiffResult = {
     url: opts.url,
@@ -140,8 +169,8 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
     paths: {
       design: designPng,
       page: domPng,
-      heatmap: heatmapPng,
-      overlay: overlayPath,
+      heatmap: writeHeatmap ? heatmapPng : undefined,
+      overlay: writeOverlay ? overlayPath : undefined,
       metrics: metricsPath,
     },
     readiness: shot.readiness,
@@ -162,6 +191,7 @@ export function metricsOf(result: DesignDiffResult) {
     totalPixels: result.totalPixels,
     coveragePercent: result.coveragePercent,
     diffBounds: result.diffBounds,
+    readiness: result.readiness,
   };
 }
 

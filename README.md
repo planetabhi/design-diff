@@ -23,6 +23,9 @@ bunx design-diff http://localhost:3000 --file <fileKey> --frame <node-id> --scal
 --auth <path>       Playwright storageState for pages behind login.
 --out <dir>         Where the report is written (default .design-diff).
 --ignore <x,y,w,h>  Rectangle (CSS px) to exclude from the diff. Repeatable.
+--ignore-selector <sel>  CSS selector whose elements are masked. Repeatable.
+--wait-for <sel>    Wait for this selector before capturing. Repeatable.
+--no-overlay        Skip writing overlay.html and heatmap.png.
 --fail-under <pct>  Exit 1 when the visual match is below this percentage.
 --json              Print the result as JSON to stdout and nothing else.
 --open              Open the report when done.
@@ -34,11 +37,17 @@ The design PNG sets the size, the page is screenshotted at the same pixel dimens
 
 With `--file/--frame`, it pulls the frame's size and PNG from the Figma API instead (needs `DESIGN_DIFF_FIGMA_TOKEN`).
 
-Use `--ignore` to mask dynamic regions (avatars, timestamps) so they never count as differences. Coordinates are CSS pixels, repeat the flag for multiple boxes.
+Use `--ignore` to mask dynamic regions (avatars, timestamps) so they never count as differences. Coordinates are CSS pixels, repeat the flag for multiple boxes. Prefer `--ignore-selector` when the region moves or resizes — every element matching the selector is masked by its live bounding box.
 
 ```sh
 bunx design-diff http://localhost:3000 --png design.png \
-  --ignore 24,24,48,48 --ignore 0,900,1440,120
+  --ignore 24,24,48,48 --ignore-selector "[data-dynamic], time"
+```
+
+Use `--wait-for` to hold the capture until a selector appears, removing most “still loading” flakes. It errors if the selector never shows within 15s.
+
+```sh
+bunx design-diff http://localhost:3000 --png design.png --wait-for ".hero-loaded"
 ```
 
 ## Pages behind login
@@ -87,11 +96,12 @@ The same numbers are written to `metrics.json` in the run folder for scripting:
   "changedPixels": 214326,
   "totalPixels": 1300684,
   "coveragePercent": 100,
-  "diffBounds": { "x": 0, "y": 0, "width": 1442, "height": 902 }
+  "diffBounds": { "x": 0, "y": 0, "width": 1442, "height": 902 },
+  "readiness": { "fontsReady": true, "imagesComplete": true }
 }
 ```
 
-The overlay report draws the diff bounds as a box you can toggle on and off.
+The overlay report draws the diff bounds as a box you can toggle on and off. Pass `--no-overlay` to skip the HTML report and heatmap when you only need the metrics.
 
 ## Scripting and CI
 

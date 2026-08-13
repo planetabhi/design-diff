@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { chromium, type Browser } from "playwright-core";
+import { chromium, type Browser, type BrowserContext } from "playwright-core";
 
 export interface ScreenshotOptions {
   url: string;
@@ -10,6 +10,8 @@ export interface ScreenshotOptions {
   outPath: string;
   authStateRef?: string;
   browser?: Browser;
+  waitFor?: string[];
+  ignoreSelectors?: string[];
 }
 
 export interface Readiness {
@@ -17,11 +19,20 @@ export interface Readiness {
   imagesComplete: boolean;
 }
 
+/** Rectangle in CSS pixels. */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface ScreenshotResult {
   path: string;
   width: number;
   height: number;
   readiness: Readiness;
+  ignoreRects: Rect[];
 }
 
 export async function screenshotPage(opts: ScreenshotOptions): Promise<ScreenshotResult> {
@@ -29,9 +40,10 @@ export async function screenshotPage(opts: ScreenshotOptions): Promise<Screensho
   const h = Math.round(opts.size.h);
   const ownsBrowser = !opts.browser;
   let browser: Browser | undefined = opts.browser;
+  let context: BrowserContext | undefined;
   try {
     browser = browser ?? (await launchChromium());
-    const context = await browser.newContext({
+    context = await browser.newContext({
       viewport: { width: w, height: h },
       deviceScaleFactor: opts.deviceScaleFactor,
       reducedMotion: "reduce",
@@ -46,6 +58,14 @@ export async function screenshotPage(opts: ScreenshotOptions): Promise<Screensho
         throw new Error(`could not load ${opts.url} — is the server running?`);
       }
       throw err;
+    }
+
+    for (const sel of opts.waitFor ?? []) {
+      try {
+        await page.waitForSelector(sel, { state: "visible", timeout: 15000 });
+      } catch {
+        throw new Error(`waitFor: selector "${sel}" did not appear within 15s`);
+      }
     }
 
     const fontsReady = await withTimeout(
@@ -80,6 +100,14 @@ export async function screenshotPage(opts: ScreenshotOptions): Promise<Screensho
         "*{animation:none!important;transition:none!important;caret-color:transparent!important}",
     });
 
+    const ignoreRects: Rect[] = [];
+    for (const sel of opts.ignoreSelectors ?? []) {
+      for (const handle of await page.$$(sel)) {
+        const bb = await handle.boundingBox();
+        if (bb) ignoreRects.push({ x: bb.x, y: bb.y, width: bb.width, height: bb.height });
+      }
+    }
+
     await page.screenshot({
       path: opts.outPath,
       clip: { x: 0, y: 0, width: w, height: h },
@@ -90,8 +118,10 @@ export async function screenshotPage(opts: ScreenshotOptions): Promise<Screensho
       width: Math.round(w * opts.deviceScaleFactor),
       height: Math.round(h * opts.deviceScaleFactor),
       readiness: { fontsReady, imagesComplete },
+      ignoreRects,
     };
   } finally {
+    await context?.close();
     if (ownsBrowser) await browser?.close();
   }
 }

@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 
 import { spawn } from "node:child_process";
-import { designDiff, metricsOf, type DesignDiffResult } from "./src/core.ts";
-import type { IgnoreRegion } from "./src/compare/pixel.ts";
+import { designDiff, metricsOf, type DesignDiffResult, type IgnoreInput, type IgnoreRegion } from "./src/core.ts";
 
 const USAGE = `design-diff — overlay a design on a live page
 
@@ -21,6 +20,9 @@ Options:
   --auth <path>       Playwright storageState JSON for pages behind login.
   --out <dir>         Output dir (default .design-diff).
   --ignore <x,y,w,h>  Rectangle (CSS px) to exclude from the diff. Repeatable.
+  --ignore-selector <sel>  CSS selector whose elements are masked. Repeatable.
+  --wait-for <sel>    Wait for this selector before capturing. Repeatable.
+  --no-overlay        Skip writing overlay.html and heatmap.png.
   --fail-under <pct>  Exit 1 when the visual match is below this percentage.
   --json              Print the result as JSON to stdout and nothing else.
   --open              Open the report when done.
@@ -38,6 +40,9 @@ interface Args {
   auth?: string;
   out: string;
   ignore: IgnoreRegion[];
+  ignoreSelectors: string[];
+  waitFor: string[];
+  noOverlay: boolean;
   failUnder?: number;
   json: boolean;
   open: boolean;
@@ -50,6 +55,9 @@ function parseArgs(argv: string[]): Args {
     threshold: 0.1,
     out: ".design-diff",
     ignore: [],
+    ignoreSelectors: [],
+    waitFor: [],
+    noOverlay: false,
     json: false,
     open: false,
     help: false,
@@ -62,6 +70,7 @@ function parseArgs(argv: string[]): Args {
       case "--help": a.help = true; break;
       case "--open": a.open = true; break;
       case "--json": a.json = true; break;
+      case "--no-overlay": a.noOverlay = true; break;
       case "--png": a.png = argv[++i]; break;
       case "--file": a.file = argv[++i]; break;
       case "--frame": a.frame = argv[++i]; break;
@@ -69,6 +78,8 @@ function parseArgs(argv: string[]): Args {
       case "--threshold": a.threshold = Number(argv[++i]); break;
       case "--fail-under": a.failUnder = Number(argv[++i]); break;
       case "--ignore": a.ignore.push(parseIgnore(argv[++i])); break;
+      case "--ignore-selector": a.ignoreSelectors.push(requireValue("--ignore-selector", argv[++i])); break;
+      case "--wait-for": a.waitFor.push(requireValue("--wait-for", argv[++i])); break;
       case "--auth": a.auth = argv[++i]; break;
       case "--out": a.out = argv[++i] ?? a.out; break;
       default:
@@ -78,6 +89,11 @@ function parseArgs(argv: string[]): Args {
   }
   a.url = positionals[0];
   return a;
+}
+
+function requireValue(flag: string, value: string | undefined): string {
+  if (!value) fail(`${flag} expects a value`);
+  return value;
 }
 
 function parseIgnore(spec: string | undefined): IgnoreRegion {
@@ -127,6 +143,10 @@ await run().catch((err: unknown) => {
 });
 
 async function run(): Promise<void> {
+  const ignore: IgnoreInput[] = [
+    ...args.ignore,
+    ...args.ignoreSelectors.map((selector) => ({ selector })),
+  ];
   const result = await designDiff({
     url: args.url!,
     design: args.png ? args.png : { fileKey: args.file!, frameId: args.frame! },
@@ -134,17 +154,19 @@ async function run(): Promise<void> {
     threshold: args.threshold,
     auth: args.auth,
     outDir: args.out,
-    ignore: args.ignore.length ? args.ignore : undefined,
+    ignore: ignore.length ? ignore : undefined,
+    waitFor: args.waitFor.length ? args.waitFor : undefined,
+    writeOverlay: !args.noOverlay,
   });
 
   if (args.json) {
     console.log(JSON.stringify(metricsOf(result), null, 2));
   } else {
     console.log(formatReport(result));
-    console.log(`\noverlay: ${result.paths.overlay}`);
+    if (result.paths.overlay) console.log(`\noverlay: ${result.paths.overlay}`);
     console.log(`metrics: ${result.paths.metrics}`);
     if (!result.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
-    if (args.open) openFile(result.paths.overlay);
+    if (args.open && result.paths.overlay) openFile(result.paths.overlay);
   }
 
   if (args.failUnder !== undefined && result.matchPercent < args.failUnder) {
