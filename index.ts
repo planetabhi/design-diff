@@ -172,12 +172,12 @@ async function run(): Promise<void> {
     JSON.stringify(
       {
         url: args.url,
-        matchPercent: pixel.matchPercent,
-        diffPercent: pixel.diffPercent,
+        matchPercent: round2(pixel.matchPercent),
+        diffPercent: round2(pixel.diffPercent),
         changedPixels: pixel.changedPixels,
         totalPixels: pixel.totalPixels,
-        coveragePercent: pixel.coveragePercent,
-        bounds: pixel.bounds,
+        coveragePercent: round2(pixel.coveragePercent),
+        diffBounds: pixel.bounds,
       },
       null,
       2
@@ -191,14 +191,12 @@ async function run(): Promise<void> {
   if (args.open) openFile(htmlPath);
 }
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 function formatReport(p: ReturnType<typeof comparePixelDiff>): string {
-  const lines = [
-    "DESIGN DIFF",
-    "────────────────────────",
-    "",
-    `Visual match    ${p.matchPercent.toFixed(1)}%`,
-    `Changed pixels  ${p.diffPercent.toFixed(1)}%`,
-  ];
+  const lines = ["DESIGN DIFF", "────────────────────────", "", `Visual match    ${p.matchPercent.toFixed(1)}%`];
   if (p.bounds) {
     const b = p.bounds;
     lines.push(
@@ -206,7 +204,7 @@ function formatReport(p: ReturnType<typeof comparePixelDiff>): string {
       "Diff bounds",
       `x=${b.x}..${b.x + b.width}`,
       `y=${b.y}..${b.y + b.height}`,
-      `coverage=${p.coveragePercent.toFixed(1)}%`
+      `page coverage=${p.coveragePercent.toFixed(1)}%`
     );
   } else {
     lines.push("", "No differences.");
