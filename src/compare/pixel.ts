@@ -7,7 +7,7 @@ import { reconcileDeviceDims } from "../normalize/scale.ts";
 export interface PixelDiffOptions {
   designPngPath: string;
   pagePngPath: string;
-  heatmapPath: string;
+  heatmapPath?: string;
   scale: number;
   threshold: number;
   ignore?: IgnoreRegion[];
@@ -54,8 +54,10 @@ export function comparePixelDiff(opts: PixelDiffOptions): PixelDiffResult {
     includeAA: false,
   });
 
-  mkdirSync(dirname(opts.heatmapPath), { recursive: true });
-  writeFileSync(opts.heatmapPath, PNG.sync.write(diff));
+  if (opts.heatmapPath) {
+    mkdirSync(dirname(opts.heatmapPath), { recursive: true });
+    writeFileSync(opts.heatmapPath, PNG.sync.write(diff));
+  }
 
   const totalPixels = width * height;
   const bbox = boundsOfChanges(diff.data, width, height);
