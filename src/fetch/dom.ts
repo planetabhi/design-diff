@@ -9,6 +9,7 @@ export interface ScreenshotOptions {
   deviceScaleFactor: number;
   outPath: string;
   authStateRef?: string;
+  browser?: Browser;
 }
 
 export interface Readiness {
@@ -26,9 +27,10 @@ export interface ScreenshotResult {
 export async function screenshotPage(opts: ScreenshotOptions): Promise<ScreenshotResult> {
   const w = Math.round(opts.size.w);
   const h = Math.round(opts.size.h);
-  let browser: Browser | undefined;
+  const ownsBrowser = !opts.browser;
+  let browser: Browser | undefined = opts.browser;
   try {
-    browser = await launchChromium();
+    browser = browser ?? (await launchChromium());
     const context = await browser.newContext({
       viewport: { width: w, height: h },
       deviceScaleFactor: opts.deviceScaleFactor,
@@ -90,8 +92,13 @@ export async function screenshotPage(opts: ScreenshotOptions): Promise<Screensho
       readiness: { fontsReady, imagesComplete },
     };
   } finally {
-    await browser?.close();
+    if (ownsBrowser) await browser?.close();
   }
+}
+
+/** Launch a Chromium instance callers can reuse across many screenshots. */
+export async function launchBrowser(): Promise<Browser> {
+  return launchChromium();
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {

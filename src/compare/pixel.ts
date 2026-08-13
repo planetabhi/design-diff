@@ -10,10 +10,19 @@ export interface PixelDiffOptions {
   heatmapPath: string;
   scale: number;
   threshold: number;
+  ignore?: IgnoreRegion[];
 }
 
 /** Diff bounding box in CSS pixels. */
 export interface DiffBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Rectangle in CSS pixels to exclude from the diff. */
+export interface IgnoreRegion {
   x: number;
   y: number;
   width: number;
@@ -36,6 +45,8 @@ export function comparePixelDiff(opts: PixelDiffOptions): PixelDiffResult {
   const { width, height } = reconcileDeviceDims(design, page, opts.scale);
   const a = cropRGBA(design, width, height);
   const b = cropRGBA(page, width, height);
+
+  if (opts.ignore?.length) maskRegions(a, b, width, height, opts.ignore, opts.scale);
 
   const diff = new PNG({ width, height });
   const mismatched = pixelmatch(a, b, diff.data, width, height, {
@@ -106,4 +117,29 @@ function cropRGBA(png: PNG, width: number, height: number): Buffer {
     png.data.copy(out, y * width * 4, y * png.width * 4, y * png.width * 4 + width * 4);
   }
   return out;
+}
+
+// Zero out ignored rectangles in both buffers so pixelmatch can't flag them.
+// Regions arrive in CSS pixels; the buffers are device pixels.
+function maskRegions(
+  a: Buffer,
+  b: Buffer,
+  width: number,
+  height: number,
+  regions: IgnoreRegion[],
+  scale: number
+): void {
+  for (const r of regions) {
+    const x0 = Math.max(0, Math.round(r.x * scale));
+    const y0 = Math.max(0, Math.round(r.y * scale));
+    const x1 = Math.min(width, Math.round((r.x + r.width) * scale));
+    const y1 = Math.min(height, Math.round((r.y + r.height) * scale));
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const i = (y * width + x) * 4;
+        a[i] = a[i + 1] = a[i + 2] = a[i + 3] = 0;
+        b[i] = b[i + 1] = b[i + 2] = b[i + 3] = 0;
+      }
+    }
+  }
 }

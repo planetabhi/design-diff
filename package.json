@@ -1,13 +1,38 @@
 {
   "name": "design-diff",
-  "version": "0.0.3",
-  "description": "CLI for overlaying design exports or Figma frames on live pages, with a before/after slider and pixel-diff heatmap.",
+  "version": "0.0.4",
+  "description": "CLI and library for overlaying design exports or Figma frames on live pages, with a before/after slider and pixel-diff heatmap.",
+  "keywords": [
+    "design-diff",
+    "visual-regression",
+    "visual-testing",
+    "pixel-diff",
+    "pixelmatch",
+    "screenshot",
+    "figma",
+    "playwright",
+    "overlay",
+    "ui-testing",
+    "cli"
+  ],
+  "homepage": "https://github.com/planetabhi/design-diff#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/planetabhi/design-diff.git"
+  },
+  "bugs": {
+    "url": "https://github.com/planetabhi/design-diff/issues"
+  },
   "module": "index.ts",
   "type": "module",
   "license": "MIT",
   "author": "@planetabhi",
   "bin": {
     "design-diff": "index.ts"
+  },
+  "exports": {
+    ".": "./src/core.ts",
+    "./package.json": "./package.json"
   },
   "files": [
     "index.ts",
