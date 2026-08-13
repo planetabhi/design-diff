@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { chromium, type Browser } from "playwright-core";
+import { chromium, type Browser, type BrowserContext } from "playwright-core";
 
 export interface ScreenshotOptions {
   url: string;
@@ -29,9 +29,10 @@ export async function screenshotPage(opts: ScreenshotOptions): Promise<Screensho
   const h = Math.round(opts.size.h);
   const ownsBrowser = !opts.browser;
   let browser: Browser | undefined = opts.browser;
+  let context: BrowserContext | undefined;
   try {
     browser = browser ?? (await launchChromium());
-    const context = await browser.newContext({
+    context = await browser.newContext({
       viewport: { width: w, height: h },
       deviceScaleFactor: opts.deviceScaleFactor,
       reducedMotion: "reduce",
@@ -92,6 +93,7 @@ export async function screenshotPage(opts: ScreenshotOptions): Promise<Screensho
       readiness: { fontsReady, imagesComplete },
     };
   } finally {
+    await context?.close();
     if (ownsBrowser) await browser?.close();
   }
 }
