@@ -57,4 +57,36 @@ describe("comparePixelDiff", () => {
     });
     expect(res.diffPercent).toBeCloseTo(8, 5);
   });
+
+  test("reports match percent, changed pixels, bounds, and coverage", () => {
+    const res = comparePixelDiff({
+      designPngPath: basePath,
+      pagePngPath: candPath,
+      heatmapPath: join(dir, "heatmap2.png"),
+      scale: 2,
+      threshold: 0.1,
+    });
+    // 4x4 red block out of 20x10 device px = 16 changed pixels.
+    expect(res.changedPixels).toBe(16);
+    expect(res.totalPixels).toBe(W * H);
+    expect(res.matchPercent).toBeCloseTo(92, 5);
+    // Bounds are reported in CSS px (device / scale).
+    expect(res.bounds).toEqual({ x: 0, y: 0, width: 2, height: 2 });
+    // Bounding box is the 4x4 device block over the 20x10 page.
+    expect(res.coveragePercent).toBeCloseTo(8, 5);
+  });
+
+  test("identical images report a perfect match and no bounds", () => {
+    const res = comparePixelDiff({
+      designPngPath: basePath,
+      pagePngPath: basePath,
+      heatmapPath: join(dir, "heatmap3.png"),
+      scale: 1,
+      threshold: 0.1,
+    });
+    expect(res.changedPixels).toBe(0);
+    expect(res.matchPercent).toBe(100);
+    expect(res.bounds).toBeNull();
+    expect(res.coveragePercent).toBe(0);
+  });
 });
