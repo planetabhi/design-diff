@@ -114,6 +114,7 @@ function boundsOfChanges(data: Buffer, width: number, height: number): RawBounds
 }
 
 function cropRGBA(png: PNG, width: number, height: number): Buffer {
+  if (png.width === width && png.height === height) return png.data;
   const out = Buffer.alloc(width * height * 4);
   for (let y = 0; y < height; y++) {
     png.data.copy(out, y * width * 4, y * png.width * 4, y * png.width * 4 + width * 4);
@@ -137,11 +138,10 @@ function maskRegions(
     const x1 = Math.min(width, Math.round((r.x + r.width) * scale));
     const y1 = Math.min(height, Math.round((r.y + r.height) * scale));
     for (let y = y0; y < y1; y++) {
-      for (let x = x0; x < x1; x++) {
-        const i = (y * width + x) * 4;
-        a[i] = a[i + 1] = a[i + 2] = a[i + 3] = 0;
-        b[i] = b[i + 1] = b[i + 2] = b[i + 3] = 0;
-      }
+      const start = (y * width + x0) * 4;
+      const end = (y * width + x1) * 4;
+      a.fill(0, start, end);
+      b.fill(0, start, end);
     }
   }
 }
