@@ -84,7 +84,7 @@ function parseArgs(argv: string[]): Args {
       case "--ignore": a.ignore.push(parseIgnore(argv[++i])); break;
       case "--ignore-selector": a.ignoreSelectors.push(requireValue("--ignore-selector", argv[++i])); break;
       case "--wait-for": a.waitFor.push(requireValue("--wait-for", argv[++i])); break;
-      case "--auth": a.auth = argv[++i]; break;
+      case "--auth": a.auth = requireValue("--auth", argv[++i]); break;
       case "--out": a.out = argv[++i] ?? a.out; break;
       default:
         if (t.startsWith("--")) fail(`unknown option ${t}`);
