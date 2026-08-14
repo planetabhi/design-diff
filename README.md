@@ -27,6 +27,7 @@ bunx design-diff http://localhost:3000 --file <fileKey> --frame <node-id> --scal
 --ignore-selector <sel>  CSS selector whose elements are masked. Repeatable.
 --wait-for <sel>    Wait for this selector before capturing. Repeatable.
 --no-overlay        Skip writing overlay.html and heatmap.png.
+--annotate          Also write annotated.png with the diff box drawn on it.
 --fail-under <pct>  Exit 1 when the visual match is below this percentage.
 --json              Print the result as JSON to stdout and nothing else.
 --open              Open the report when done.
@@ -113,6 +114,8 @@ The same numbers are written to `metrics.json` in the run folder for scripting:
 ```
 
 The overlay report draws the diff bounds as a box you can toggle on and off. Pass `--no-overlay` to skip the HTML report and heatmap when you only need the metrics.
+
+Pass `--annotate` to also write `annotated.png` — the page screenshot with the diff box drawn on it. It needs no browser to view, so it drops straight into a PR comment or CI artifact. Nothing is written when there is no diff.
 
 ## Scripting and CI
 

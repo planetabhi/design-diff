@@ -25,6 +25,7 @@ Options:
   --ignore-selector <sel>  CSS selector whose elements are masked. Repeatable.
   --wait-for <sel>    Wait for this selector before capturing. Repeatable.
   --no-overlay        Skip writing overlay.html and heatmap.png.
+  --annotate          Also write annotated.png with the diff box drawn on it.
   --fail-under <pct>  Exit 1 when the visual match is below this percentage.
   --json              Print the result as JSON to stdout and nothing else.
   --open              Open the report when done.
@@ -46,6 +47,7 @@ interface Args {
   ignoreSelectors: string[];
   waitFor: string[];
   noOverlay: boolean;
+  annotate: boolean;
   failUnder?: number;
   json: boolean;
   open: boolean;
@@ -61,6 +63,7 @@ function parseArgs(argv: string[]): Args {
     ignoreSelectors: [],
     waitFor: [],
     noOverlay: false,
+    annotate: false,
     json: false,
     open: false,
     help: false,
@@ -74,6 +77,7 @@ function parseArgs(argv: string[]): Args {
       case "--open": a.open = true; break;
       case "--json": a.json = true; break;
       case "--no-overlay": a.noOverlay = true; break;
+      case "--annotate": a.annotate = true; break;
       case "--png": a.png = argv[++i]; break;
       case "--actual": a.actual = argv[++i]; break;
       case "--file": a.file = argv[++i]; break;
@@ -163,6 +167,7 @@ async function run(): Promise<void> {
     ignore: ignore.length ? ignore : undefined,
     waitFor: args.waitFor.length ? args.waitFor : undefined,
     writeOverlay: !args.noOverlay,
+    writeAnnotated: args.annotate,
   });
 
   if (args.json) {
@@ -170,6 +175,7 @@ async function run(): Promise<void> {
   } else {
     console.log(formatReport(result));
     if (result.paths.overlay) console.log(`\noverlay: ${result.paths.overlay}`);
+    if (result.paths.annotated) console.log(`annotated: ${result.paths.annotated}`);
     console.log(`metrics: ${result.paths.metrics}`);
     if (result.readiness && !result.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
     if (args.open && result.paths.overlay) openFile(result.paths.overlay);
