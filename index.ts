@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { designDiff, metricsOf, type DesignDiffResult, type IgnoreInput, type IgnoreRegion } from "./src/core.ts";
 
 const USAGE = `design-diff — overlay a design on a live page
@@ -30,6 +31,7 @@ Options:
   --json              Print the result as JSON to stdout and nothing else.
   --open              Open the report when done.
   -h, --help          Show this help.
+  -v, --version       Print the version.
 
 The Figma API path needs DESIGN_DIFF_FIGMA_TOKEN (view access is enough).`;
 
@@ -52,6 +54,7 @@ interface Args {
   json: boolean;
   open: boolean;
   help: boolean;
+  version: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -67,6 +70,7 @@ function parseArgs(argv: string[]): Args {
     json: false,
     open: false,
     help: false,
+    version: false,
   };
   const positionals: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -74,6 +78,8 @@ function parseArgs(argv: string[]): Args {
     switch (t) {
       case "-h":
       case "--help": a.help = true; break;
+      case "-v":
+      case "--version": a.version = true; break;
       case "--open": a.open = true; break;
       case "--json": a.json = true; break;
       case "--no-overlay": a.noOverlay = true; break;
@@ -104,6 +110,15 @@ function requireValue(flag: string, value: string | undefined): string {
   return value;
 }
 
+function readVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 function parseIgnore(spec: string | undefined): IgnoreRegion {
   const parts = (spec ?? "").split(",").map((n) => Number(n.trim()));
   if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
@@ -125,6 +140,10 @@ function openFile(path: string): void {
 }
 
 const args = parseArgs(process.argv.slice(2));
+if (args.version) {
+  console.log(readVersion());
+  process.exit(0);
+}
 if (args.help) {
   console.log(USAGE);
   process.exit(0);
