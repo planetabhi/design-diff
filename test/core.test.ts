@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { designDiff } from "../src/core.ts";
@@ -78,5 +78,40 @@ describe("designDiff image-vs-image mode", () => {
     await expect(
       designDiff({ url: "http://x", actual: samePath, design: designPath, outDir: dir })
     ).rejects.toThrow(/either a url or an actual/);
+  });
+
+  test("writes an annotated png only when a diff exists", async () => {
+    const withDiff = await designDiff({
+      actual: changedPath,
+      design: designPath,
+      outDir: dir,
+      writeOverlay: false,
+      writeHeatmap: false,
+      writeAnnotated: true,
+    });
+    expect(withDiff.paths.annotated).toBeDefined();
+    const annotated = PNG.sync.read(readFileSync(withDiff.paths.annotated!));
+    // Same dimensions as the page it annotates.
+    expect(annotated.width).toBe(20);
+    expect(annotated.height).toBe(10);
+    // The box border is painted amber somewhere.
+    let sawBorder = false;
+    for (let i = 0; i < annotated.data.length; i += 4) {
+      if (annotated.data[i] === 255 && annotated.data[i + 1] === 179 && annotated.data[i + 2] === 0) {
+        sawBorder = true;
+        break;
+      }
+    }
+    expect(sawBorder).toBe(true);
+
+    const noDiff = await designDiff({
+      actual: samePath,
+      design: designPath,
+      outDir: dir,
+      writeOverlay: false,
+      writeHeatmap: false,
+      writeAnnotated: true,
+    });
+    expect(noDiff.paths.annotated).toBeUndefined();
   });
 });

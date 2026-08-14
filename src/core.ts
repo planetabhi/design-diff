@@ -7,6 +7,7 @@ import { exportDesignFrame } from "./fetch/figma.ts";
 import { screenshotPage, launchBrowser, type Readiness } from "./fetch/dom.ts";
 import { comparePixelDiff, type DiffBounds, type IgnoreRegion } from "./compare/pixel.ts";
 import { renderOverlayHtml } from "./overlay.ts";
+import { writeAnnotatedPng } from "./annotate.ts";
 
 export { launchBrowser };
 export type { DiffBounds, IgnoreRegion, Readiness };
@@ -41,6 +42,8 @@ export interface DesignDiffOptions {
   writeOverlay?: boolean;
   /** Write heatmap.png (default true; forced on when the overlay is written). */
   writeHeatmap?: boolean;
+  /** Write annotated.png with the diff box drawn on the page (default false). */
+  writeAnnotated?: boolean;
   /** Reuse a shared browser instead of launching one per call. */
   browser?: Browser;
 }
@@ -58,6 +61,7 @@ export interface DesignDiffResult {
     page: string;
     heatmap?: string;
     overlay?: string;
+    annotated?: string;
     metrics: string;
   };
   /** Page load signals; absent in image-vs-image mode. */
@@ -107,6 +111,7 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
   const domPng = join(runDir, "dom.png");
   const heatmapPng = join(runDir, "heatmap.png");
   const overlayPath = join(runDir, "overlay.html");
+  const annotatedPng = join(runDir, "annotated.png");
   const metricsPath = join(runDir, "metrics.json");
 
   let box: Geometry;
@@ -167,6 +172,17 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
     ignore: resolvedIgnore,
   });
 
+  let annotatedOut: string | undefined;
+  if (opts.writeAnnotated && pixel.bounds) {
+    writeAnnotatedPng({
+      pagePngPath: domPng,
+      outPath: annotatedPng,
+      bounds: pixel.bounds,
+      scale: compareScale,
+    });
+    annotatedOut = annotatedPng;
+  }
+
   if (writeOverlay) {
     const diffBoundsPct = pixel.bounds
       ? {
@@ -204,6 +220,7 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
       page: domPng,
       heatmap: writeHeatmap ? heatmapPng : undefined,
       overlay: writeOverlay ? overlayPath : undefined,
+      annotated: annotatedOut,
       metrics: metricsPath,
     },
     readiness,

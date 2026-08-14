@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { designDiff, metricsOf, type DesignDiffResult, type IgnoreInput, type IgnoreRegion } from "./src/core.ts";
 
 const USAGE = `design-diff — overlay a design on a live page
@@ -25,10 +26,12 @@ Options:
   --ignore-selector <sel>  CSS selector whose elements are masked. Repeatable.
   --wait-for <sel>    Wait for this selector before capturing. Repeatable.
   --no-overlay        Skip writing overlay.html and heatmap.png.
+  --annotate          Also write annotated.png with the diff box drawn on it.
   --fail-under <pct>  Exit 1 when the visual match is below this percentage.
   --json              Print the result as JSON to stdout and nothing else.
   --open              Open the report when done.
   -h, --help          Show this help.
+  -v, --version       Print the version.
 
 The Figma API path needs DESIGN_DIFF_FIGMA_TOKEN (view access is enough).`;
 
@@ -46,10 +49,12 @@ interface Args {
   ignoreSelectors: string[];
   waitFor: string[];
   noOverlay: boolean;
+  annotate: boolean;
   failUnder?: number;
   json: boolean;
   open: boolean;
   help: boolean;
+  version: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -61,9 +66,11 @@ function parseArgs(argv: string[]): Args {
     ignoreSelectors: [],
     waitFor: [],
     noOverlay: false,
+    annotate: false,
     json: false,
     open: false,
     help: false,
+    version: false,
   };
   const positionals: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -71,9 +78,12 @@ function parseArgs(argv: string[]): Args {
     switch (t) {
       case "-h":
       case "--help": a.help = true; break;
+      case "-v":
+      case "--version": a.version = true; break;
       case "--open": a.open = true; break;
       case "--json": a.json = true; break;
       case "--no-overlay": a.noOverlay = true; break;
+      case "--annotate": a.annotate = true; break;
       case "--png": a.png = argv[++i]; break;
       case "--actual": a.actual = argv[++i]; break;
       case "--file": a.file = argv[++i]; break;
@@ -100,6 +110,15 @@ function requireValue(flag: string, value: string | undefined): string {
   return value;
 }
 
+function readVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 function parseIgnore(spec: string | undefined): IgnoreRegion {
   const parts = (spec ?? "").split(",").map((n) => Number(n.trim()));
   if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
@@ -121,6 +140,10 @@ function openFile(path: string): void {
 }
 
 const args = parseArgs(process.argv.slice(2));
+if (args.version) {
+  console.log(readVersion());
+  process.exit(0);
+}
 if (args.help) {
   console.log(USAGE);
   process.exit(0);
@@ -163,6 +186,7 @@ async function run(): Promise<void> {
     ignore: ignore.length ? ignore : undefined,
     waitFor: args.waitFor.length ? args.waitFor : undefined,
     writeOverlay: !args.noOverlay,
+    writeAnnotated: args.annotate,
   });
 
   if (args.json) {
@@ -170,6 +194,7 @@ async function run(): Promise<void> {
   } else {
     console.log(formatReport(result));
     if (result.paths.overlay) console.log(`\noverlay: ${result.paths.overlay}`);
+    if (result.paths.annotated) console.log(`annotated: ${result.paths.annotated}`);
     console.log(`metrics: ${result.paths.metrics}`);
     if (result.readiness && !result.readiness.fontsReady) console.warn("warning: web fonts were not fully loaded");
     if (args.open && result.paths.overlay) openFile(result.paths.overlay);
