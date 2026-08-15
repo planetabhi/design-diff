@@ -1,7 +1,7 @@
 {
   "name": "design-diff",
   "version": "0.0.4",
-  "description": "CLI and library for overlaying design exports or Figma frames on live pages, with a before/after slider and pixel-diff heatmap.",
+  "description": "Give agents and humans a precise, machine-readable way to measure how closely a live web page matches a design.",
   "keywords": [
     "design-diff",
     "visual-regression",

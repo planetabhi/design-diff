@@ -1,5 +1,7 @@
 # design-diff
 
+Give agents and humans a precise, machine-readable way to measure how closely a live web page matches a design.
+
 A CLI and library that overlays a design export on a screenshot of your page. Move a slider to compare them side by side, lower the opacity to see one on top of the other, or view a pixel diff to see exactly which pixels differ.
 
 ## Usage
