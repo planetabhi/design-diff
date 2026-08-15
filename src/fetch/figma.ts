@@ -36,6 +36,8 @@ function backoffMs(res: Response, attempt: number): number {
 async function figmaGet<T>(path: string, token: string): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${FIGMA_API}${path}`, { headers: { "X-Figma-Token": token } });
+    // SAFETY: these Figma REST endpoints return the fields declared by the caller's response
+    // type (FigmaNodesResponse / FigmaImagesResponse); every accessed field is guarded downstream.
     if (res.ok) return (await res.json()) as T;
     const retryable = res.status === 429 || res.status >= 500;
     if (!retryable || attempt >= MAX_RETRIES) {

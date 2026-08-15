@@ -136,6 +136,7 @@ function parseIgnore(spec: string | undefined): IgnoreRegion {
   if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
     fail(`--ignore expects x,y,w,h (got "${spec ?? ""}")`);
   }
+  // SAFETY: the guard above proves parts holds exactly four finite numbers.
   const [x, y, width, height] = parts as [number, number, number, number];
   return { x, y, width, height };
 }

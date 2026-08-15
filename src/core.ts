@@ -118,18 +118,19 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
   const metricsPath = join(runDir, "metrics.json");
 
   let box: Geometry;
-  if (pngPath) {
+  if (isFigmaSource(opts.design)) {
+    const { fileKey, frameId } = opts.design;
+    ({ box } = await exportDesignFrame(fileKey, frameId, scale, designPng));
+  } else {
+    const localPng = opts.design;
     let png: PNG;
     try {
-      png = PNG.sync.read(readFileSync(pngPath));
+      png = PNG.sync.read(readFileSync(localPng));
     } catch {
-      throw new Error(`${pngPath} is not a readable PNG`);
+      throw new Error(`${localPng} is not a readable PNG`);
     }
-    copyFileSync(pngPath, designPng);
+    copyFileSync(localPng, designPng);
     box = { x: 0, y: 0, w: png.width / scale, h: png.height / scale };
-  } else {
-    const src = opts.design as FigmaSource;
-    ({ box } = await exportDesignFrame(src.fileKey, src.frameId, scale, designPng));
   }
 
   let pageWidth: number;
