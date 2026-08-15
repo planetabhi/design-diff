@@ -40,7 +40,7 @@ export interface DesignDiffOptions {
   waitFor?: string | string[];
   /** Write overlay.html (default true). */
   writeOverlay?: boolean;
-  /** Write heatmap.png (default true; forced on when the overlay is written). */
+  /** Write heatmap.png (defaults to writeOverlay; forced on when the overlay is written). */
   writeHeatmap?: boolean;
   /** Write annotated.png with the diff box drawn on the page (default false). */
   writeAnnotated?: boolean;
@@ -49,6 +49,7 @@ export interface DesignDiffOptions {
 }
 
 export interface DesignDiffResult {
+  /** The page URL that was screenshotted, or the `actual` image path in image-vs-image mode. */
   url: string;
   matchPercent: number;
   diffPercent: number;
@@ -90,7 +91,9 @@ export async function designDiff(opts: DesignDiffOptions): Promise<DesignDiffRes
   if (opts.auth && !existsSync(opts.auth)) throw new Error(`auth file not found: ${resolve(opts.auth)}`);
 
   const writeOverlay = opts.writeOverlay ?? true;
-  const writeHeatmap = (opts.writeHeatmap ?? true) || writeOverlay;
+  // The overlay embeds the heatmap, so writing the overlay forces it on;
+  // otherwise the heatmap follows the overlay unless explicitly requested.
+  const writeHeatmap = writeOverlay || (opts.writeHeatmap ?? false);
 
   const ignoreRects: IgnoreRegion[] = [];
   const ignoreSelectors: string[] = [];
@@ -242,6 +245,7 @@ export function metricsOf(result: DesignDiffResult) {
     coveragePercent: result.coveragePercent,
     diffBounds: result.diffBounds,
     readiness: result.readiness,
+    paths: result.paths,
   };
 }
 

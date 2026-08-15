@@ -75,7 +75,24 @@ function parseArgs(argv: string[]): Args {
   const positionals: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]!;
-    switch (t) {
+    // Support --flag=value alongside space-separated --flag value.
+    let name = t;
+    let inline: string | undefined;
+    if (t.startsWith("--")) {
+      const eq = t.indexOf("=");
+      if (eq !== -1) {
+        name = t.slice(0, eq);
+        inline = t.slice(eq + 1);
+      }
+    }
+    // Consume this flag's value, rejecting a missing value or a following flag.
+    const value = (): string => {
+      if (inline !== undefined) return inline;
+      const next = argv[++i];
+      if (next === undefined || next.startsWith("--")) fail(`${name} expects a value`);
+      return next;
+    };
+    switch (name) {
       case "-h":
       case "--help": a.help = true; break;
       case "-v":
@@ -84,30 +101,25 @@ function parseArgs(argv: string[]): Args {
       case "--json": a.json = true; break;
       case "--no-overlay": a.noOverlay = true; break;
       case "--annotate": a.annotate = true; break;
-      case "--png": a.png = argv[++i]; break;
-      case "--actual": a.actual = argv[++i]; break;
-      case "--file": a.file = argv[++i]; break;
-      case "--frame": a.frame = argv[++i]; break;
-      case "--scale": a.scale = Number(argv[++i]); break;
-      case "--threshold": a.threshold = Number(argv[++i]); break;
-      case "--fail-under": a.failUnder = Number(argv[++i]); break;
-      case "--ignore": a.ignore.push(parseIgnore(argv[++i])); break;
-      case "--ignore-selector": a.ignoreSelectors.push(requireValue("--ignore-selector", argv[++i])); break;
-      case "--wait-for": a.waitFor.push(requireValue("--wait-for", argv[++i])); break;
-      case "--auth": a.auth = requireValue("--auth", argv[++i]); break;
-      case "--out": a.out = argv[++i] ?? a.out; break;
+      case "--png": a.png = value(); break;
+      case "--actual": a.actual = value(); break;
+      case "--file": a.file = value(); break;
+      case "--frame": a.frame = value(); break;
+      case "--scale": a.scale = Number(value()); break;
+      case "--threshold": a.threshold = Number(value()); break;
+      case "--fail-under": a.failUnder = Number(value()); break;
+      case "--ignore": a.ignore.push(parseIgnore(value())); break;
+      case "--ignore-selector": a.ignoreSelectors.push(value()); break;
+      case "--wait-for": a.waitFor.push(value()); break;
+      case "--auth": a.auth = value(); break;
+      case "--out": a.out = value(); break;
       default:
-        if (t.startsWith("--")) fail(`unknown option ${t}`);
+        if (t.startsWith("--")) fail(`unknown option ${name}`);
         positionals.push(t);
     }
   }
   a.url = positionals[0];
   return a;
-}
-
-function requireValue(flag: string, value: string | undefined): string {
-  if (!value) fail(`${flag} expects a value`);
-  return value;
 }
 
 function readVersion(): string {
@@ -191,6 +203,7 @@ async function run(): Promise<void> {
 
   if (args.json) {
     console.log(JSON.stringify(metricsOf(result), null, 2));
+    if (args.open) console.warn("warning: --open is ignored with --json");
   } else {
     console.log(formatReport(result));
     if (result.paths.overlay) console.log(`\noverlay: ${result.paths.overlay}`);

@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
-import { designDiff } from "../src/core.ts";
+import { designDiff, metricsOf } from "../src/core.ts";
 
 const dir = join(".design-diff", "test-core");
 mkdirSync(dir, { recursive: true });
@@ -113,5 +113,39 @@ describe("designDiff image-vs-image mode", () => {
       writeAnnotated: true,
     });
     expect(noDiff.paths.annotated).toBeUndefined();
+  });
+
+  test("writeOverlay:false suppresses both overlay.html and heatmap.png", async () => {
+    const res = await designDiff({
+      actual: changedPath,
+      design: designPath,
+      outDir: dir,
+      writeOverlay: false,
+    });
+    expect(res.paths.overlay).toBeUndefined();
+    expect(res.paths.heatmap).toBeUndefined();
+  });
+
+  test("heatmap is written by default alongside the overlay", async () => {
+    const res = await designDiff({
+      actual: changedPath,
+      design: designPath,
+      outDir: dir,
+    });
+    expect(res.paths.overlay).toBeDefined();
+    expect(res.paths.heatmap).toBeDefined();
+    expect(existsSync(res.paths.heatmap!)).toBe(true);
+  });
+
+  test("metrics include the artifact paths for scripting", async () => {
+    const res = await designDiff({
+      actual: changedPath,
+      design: designPath,
+      outDir: dir,
+      writeOverlay: false,
+    });
+    const metrics = metricsOf(res);
+    expect(metrics.paths).toEqual(res.paths);
+    expect(metrics.paths.metrics).toContain("metrics.json");
   });
 });

@@ -108,7 +108,7 @@ page coverage=100.0%
 
 The shape of the diff is the diagnosis. A tight box is one component off, a box spanning the page points at a font that never loaded or a viewport mismatch. Read the shape, not just the number.
 
-The same numbers are written to `metrics.json` in the run folder for scripting.
+The same numbers, plus the paths of every artifact, are written to `metrics.json` in the run folder for scripting.
 
 ```json
 {
@@ -149,7 +149,7 @@ For an agent the contract is simple. Read the JSON, act on `matchPercent` and `d
 ## Programmatic API
 
 The CLI is a thin wrapper around `designDiff`, which returns the same data it
-writes to `metrics.json` plus the paths of every artifact.
+writes to `metrics.json`, including the paths of every artifact.
 
 ```ts
 import { designDiff } from "design-diff";
