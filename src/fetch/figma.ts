@@ -12,10 +12,31 @@ interface FigmaNode {
   children?: FigmaNode[];
 }
 
-async function figmaGet(path: string, token: string): Promise<any> {
+interface FigmaNodesResponse {
+  nodes?: Record<string, { document?: FigmaNode } | undefined>;
+}
+
+interface FigmaImagesResponse {
+  err?: string | null;
+  images?: Record<string, string | null | undefined>;
+}
+
+// Honour a Retry-After header (delta-seconds or HTTP date), else exponential backoff.
+function backoffMs(res: Response, attempt: number): number {
+  const header = res.headers.get("retry-after");
+  if (header) {
+    const secs = Number(header);
+    if (Number.isFinite(secs)) return Math.min(Math.max(secs, 0) * 1000, 15000);
+    const at = Date.parse(header);
+    if (!Number.isNaN(at)) return Math.min(Math.max(at - Date.now(), 0), 15000);
+  }
+  return Math.min(1000 * 2 ** attempt, 8000);
+}
+
+async function figmaGet<T>(path: string, token: string): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${FIGMA_API}${path}`, { headers: { "X-Figma-Token": token } });
-    if (res.ok) return res.json();
+    if (res.ok) return (await res.json()) as T;
     const retryable = res.status === 429 || res.status >= 500;
     if (!retryable || attempt >= MAX_RETRIES) {
       if (res.status === 401 || res.status === 403) {
@@ -24,7 +45,7 @@ async function figmaGet(path: string, token: string): Promise<any> {
       if (res.status === 404) throw new Error("Figma API 404: file not found — check the --file key");
       throw new Error(`Figma API ${res.status} ${res.statusText}`);
     }
-    await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** attempt, 8000)));
+    await new Promise((r) => setTimeout(r, backoffMs(res, attempt)));
   }
 }
 
@@ -45,7 +66,7 @@ export async function exportDesignFrame(
   const token = getFigmaToken();
   const id = normalizeId(frameNodeId);
 
-  const data = await figmaGet(
+  const data = await figmaGet<FigmaNodesResponse>(
     `/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(id)}`,
     token
   );
@@ -68,18 +89,26 @@ async function exportNodePng(
   token: string
 ): Promise<Buffer> {
   for (let attempt = 0; ; attempt++) {
-    const data = await figmaGet(
+    const data = await figmaGet<FigmaImagesResponse>(
       `/images/${encodeURIComponent(fileKey)}?ids=${encodeURIComponent(nodeId)}&scale=${scale}&format=png`,
       token
     );
     if (data.err) throw new Error(`Figma image export error: ${data.err}`);
     const url: string | null | undefined = data.images?.[nodeId];
-    if (url) {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`image download failed: ${res.status} ${res.statusText}`);
-      return Buffer.from(await res.arrayBuffer());
-    }
+    if (url) return downloadImage(url);
     if (attempt >= MAX_RETRIES) throw new Error(`image export not ready for node ${nodeId}`);
     await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** attempt, 8000)));
+  }
+}
+
+async function downloadImage(url: string): Promise<Buffer> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) return Buffer.from(await res.arrayBuffer());
+    const retryable = res.status === 429 || res.status >= 500;
+    if (!retryable || attempt >= MAX_RETRIES) {
+      throw new Error(`image download failed: ${res.status} ${res.statusText}`);
+    }
+    await new Promise((r) => setTimeout(r, backoffMs(res, attempt)));
   }
 }
