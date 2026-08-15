@@ -1,8 +1,15 @@
-# design-diff
+# Design Diff
 
-A coding agent can build a page and even look at it, but it cannot measure it against the design pixel for pixel. design-diff does. It overlays the design on a screenshot of the live page at the same pixel size and returns one number for what matched plus the box around what did not. Call it, read the score, fix what the box points at, and repeat until the page matches.
+A coding agent can build a page and even look at it, but it cannot measure it against the design pixel for pixel. Design Diff does. It overlays the design on a screenshot of the live page at the same pixel size and returns one number for what matched plus the box around what did not. Call it, read the score, fix what the box points at, and repeat until the page matches.
 
-Built agent-first as a command and a library that speak plain JSON, so any agent, script, or CI job can drive it. The same signal helps people too: a slider-and-heatmap report for eyeballing the diff, and a hard pass/fail gate for merges.
+**It reduces to two values an agent acts on.**
+
+- **`matchPercent`** — how close the page is to the design.
+- **`diffBounds`** — the box around what is still wrong.
+
+Read the first to know when to stop, aim the next edit at the second, and loop. Everything else in this README exists to make those two numbers trustworthy.
+
+Built agent-first. An agent or script drives it and reads back plain JSON. People get a slider and heatmap report to eyeball the same diff. And CI gets a hard pass/fail gate for merges.
 
 ## Usage
 
@@ -22,7 +29,7 @@ bunx design-diff http://localhost:3000 --file <fileKey> --frame <node-id> --scal
 --frame <node-id>   Figma frame to export (from the frame's URL).
 --actual <path>     Compare a local PNG instead of screenshotting the url.
 --scale <n>         Match the export: 1 for 1x, 2 for retina (default 1).
---threshold <0..1>  Pixel-diff sensitivity (default 0.1).
+--threshold <0..1>  pixelmatch colour threshold, lower is stricter (default 0.1).
 --auth <path>       Playwright storageState for pages behind login.
 --out <dir>         Where the report is written (default .design-diff).
 --ignore <x,y,w,h>  Rectangle (CSS px) to exclude from the diff. Repeatable.
@@ -39,9 +46,9 @@ bunx design-diff http://localhost:3000 --file <fileKey> --frame <node-id> --scal
 
 The design PNG sets the size, the page is screenshotted at the same pixel dimensions, so the two line up exactly. It waits for fonts and images to load and turns off animations before capturing.
 
-With `--file/--frame`, it pulls the frame's size and PNG from the Figma API instead (needs `DESIGN_DIFF_FIGMA_TOKEN`).
+With `--file/--frame`, it pulls the frame's size and PNG from the Figma API instead. Set `DESIGN_DIFF_FIGMA_TOKEN` to a Figma personal access token, created under Settings → Security → Personal access tokens. Read-only file access is enough, and view access to the file is all it needs. See [Figma's access token docs](https://www.figma.com/developers/api#access-tokens).
 
-Use `--ignore` to mask dynamic regions (avatars, timestamps) so they never count as differences. Coordinates are CSS pixels, repeat the flag for multiple boxes. Prefer `--ignore-selector` when the region moves or resizes — every element matching the selector is masked by its live bounding box.
+Use `--ignore` to mask dynamic regions (avatars, timestamps) so they never count as differences. Coordinates are CSS pixels, repeat the flag for multiple boxes. Prefer `--ignore-selector` when the region moves or resizes. Every element matching the selector is masked by its live bounding box.
 
 ```sh
 bunx design-diff http://localhost:3000 --png design.png \
@@ -62,7 +69,7 @@ Skip the browser entirely and diff two local PNGs with `--actual`. Handy offline
 bunx design-diff --actual screenshot.png --png design.png --json
 ```
 
-No page means no `--wait-for`, `--ignore-selector`, or `readiness`. `--scale` is ignored too — bounds are reported in image pixels. Everything else works the same.
+No page means no `--wait-for`, `--ignore-selector`, or `readiness`. `--scale` is ignored too. Bounds are reported in image pixels. Everything else works the same.
 
 ## Pages behind login
 
@@ -99,7 +106,7 @@ page coverage=100.0%
 | **Diff bounds** | The box enclosing every changed pixel, in CSS pixels. A tight box means one component is off, a box spanning the page points at a layout, viewport, or font problem. |
 | **Page coverage** | How much of the page that box spans. Tells a local issue from a global one. |
 
-The shape of the diff is the diagnosis: a tight box is one component off, a box spanning the page points at a font that never loaded or a viewport mismatch. Read the shape, not just the number.
+The shape of the diff is the diagnosis. A tight box is one component off, a box spanning the page points at a font that never loaded or a viewport mismatch. Read the shape, not just the number.
 
 The same numbers are written to `metrics.json` in the run folder for scripting.
 
@@ -118,7 +125,7 @@ The same numbers are written to `metrics.json` in the run folder for scripting.
 
 The overlay report draws the diff bounds as a box you can toggle on and off. Pass `--no-overlay` to skip the HTML report and heatmap when you only need the metrics.
 
-Pass `--annotate` to also write `annotated.png` — the page screenshot with the diff box drawn on it. It needs no browser to view, so it drops straight into a PR comment or CI artifact. Nothing is written when there is no diff.
+Pass `--annotate` to also write `annotated.png`. The page screenshot with the diff box drawn on it. It needs no browser to view, so it drops straight into a PR comment or CI artifact. Nothing is written when there is no diff.
 
 ## Scripting and CI
 
@@ -130,7 +137,12 @@ bunx design-diff http://localhost:3000 --png design.png --json --fail-under 98
 ```
 
 `--fail-under` compares against **Visual match** (a percentage). It is separate
-from `--threshold`, which is the per-pixel colour sensitivity.
+from `--threshold`, which sets how different a single pixel must be to count as
+changed. `--threshold` is passed straight to
+[pixelmatch](https://github.com/mapbox/pixelmatch): a pixel is flagged when its
+YIQ-weighted colour distance from the design exceeds that fraction of the maximum
+possible distance, so it is a perceptual metric, not raw Euclidean RGB. Lower is
+stricter, `0` flags any difference at all, and `0.1` is the default.
 
 For an agent the contract is simple. Read the JSON, act on `matchPercent` and `diffBounds`, run again, and stop when the score clears your bar.
 
