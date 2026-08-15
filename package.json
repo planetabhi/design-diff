@@ -1,7 +1,7 @@
 {
   "name": "design-diff",
   "version": "0.0.4",
-  "description": "Give agents and humans a precise, machine-readable way to measure how closely a live web page matches a design.",
+  "description": "Pixel-accurate diffs between a live web page and its design, as JSON for agents and a visual report for humans.",
   "keywords": [
     "design-diff",
     "visual-regression",
