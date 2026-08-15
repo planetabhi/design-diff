@@ -1,8 +1,8 @@
 # design-diff
 
-Give agents and humans a precise, machine-readable way to measure how closely a live web page matches a design.
+A coding agent can build a page and even look at it, but it cannot measure it against the design pixel for pixel. design-diff does. It overlays the design on a screenshot of the live page at the same pixel size and returns one number for what matched plus the box around what did not. Call it, read the score, fix what the box points at, and repeat until the page matches.
 
-A CLI and library that overlays a design export on a screenshot of your page. Move a slider to compare them side by side, lower the opacity to see one on top of the other, or view a pixel diff to see exactly which pixels differ.
+Built agent-first as a command and a library that speak plain JSON, so any agent, script, or CI job can drive it. The same signal helps people too: a slider-and-heatmap report for eyeballing the diff, and a hard pass/fail gate for merges.
 
 ## Usage
 
@@ -99,8 +99,9 @@ page coverage=100.0%
 | **Diff bounds** | The box enclosing every changed pixel, in CSS pixels. A tight box means one component is off, a box spanning the page points at a layout, viewport, or font problem. |
 | **Page coverage** | How much of the page that box spans. Tells a local issue from a global one. |
 
+The shape of the diff is the diagnosis: a tight box is one component off, a box spanning the page points at a font that never loaded or a viewport mismatch. Read the shape, not just the number.
 
-The same numbers are written to `metrics.json` in the run folder for scripting:
+The same numbers are written to `metrics.json` in the run folder for scripting.
 
 ```json
 {
@@ -131,6 +132,8 @@ bunx design-diff http://localhost:3000 --png design.png --json --fail-under 98
 `--fail-under` compares against **Visual match** (a percentage). It is separate
 from `--threshold`, which is the per-pixel colour sensitivity.
 
+For an agent the contract is simple. Read the JSON, act on `matchPercent` and `diffBounds`, run again, and stop when the score clears your bar.
+
 ## Programmatic API
 
 The CLI is a thin wrapper around `designDiff`, which returns the same data it
@@ -144,7 +147,8 @@ const result = await designDiff({
   design: "design.png", // or { fileKey, frameId }
   scale: 1,
   threshold: 0.1,
-  ignore: [{ x: 24, y: 24, width: 48, height: 48 }],
+  ignore: [{ selector: "[data-dynamic]" }, { x: 24, y: 24, width: 48, height: 48 }],
+  waitFor: ".hero-loaded",
 });
 
 if (result.matchPercent < 98) process.exit(1);
@@ -165,6 +169,13 @@ try {
   await browser.close();
 }
 ```
+
+## Limitations
+
+- It compares pixels, not perception. Treat the score as a guide, not a verdict.
+- Anti-aliasing and font rendering vary across machines, so a real page against a design export usually settles a point or two below 100 even when it looks right. Pick a threshold instead of chasing a perfect score.
+- The design and the page must be the same size. A large mismatch is a hard error by design.
+- A high score is necessary but not sufficient. A shifted component can still hide inside it, so keep the diff box and a human eye as the final check.
 
 ---
 
