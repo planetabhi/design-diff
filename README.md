@@ -1,3 +1,5 @@
+![Design diff, Cover](_cover.webp)
+
 # Design Diff
 
 A coding agent can build a page and even look at it, but it cannot measure it against the design pixel for pixel. Design Diff does. It overlays the design on a screenshot of the live page at the same pixel size and returns one number for what matched plus the box around what did not. Call it, read the score, fix what the box points at, and repeat until the page matches.
