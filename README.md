@@ -46,9 +46,9 @@ bunx design-diff http://localhost:3000 --file <fileKey> --frame <node-id> --scal
 
 ## How it works
 
-The design PNG sets the size, the page is screenshotted at the same pixel dimensions, so the two line up exactly. It waits for fonts and images to load and turns off animations before capturing.
+The design PNG sets the size, the page is screenshotted at the same pixel dimensions, so the two line up exactly. It waits for fonts and images to load and turns off animations before capturing. For the full walkthrough, see [How it works](docs/HOW_IT_WORKS.md).
 
-With `--file/--frame`, it pulls the frame's size and PNG from the Figma API instead. Set `DESIGN_DIFF_FIGMA_TOKEN` to a Figma personal access token, created under Settings → Security → Personal access tokens. Read-only file access is enough, and view access to the file is all it needs. See [Figma's access token docs](https://www.figma.com/developers/api#access-tokens).
+With `--file/--frame`, it pulls the frame's size and PNG from the Figma API instead. Set `DESIGN_DIFF_FIGMA_TOKEN` to a Figma personal access token, created under Settings → Security → Personal access tokens. Read-only file access is enough, and view access to the file is all it needs.
 
 Use `--ignore` to mask dynamic regions (avatars, timestamps) so they never count as differences. Coordinates are CSS pixels, repeat the flag for multiple boxes. Prefer `--ignore-selector` when the region moves or resizes. Every element matching the selector is masked by its live bounding box.
 
